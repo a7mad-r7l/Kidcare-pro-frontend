@@ -1,0 +1,5 @@
+package com.example.kidcare_pro
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()
