@@ -1,24 +1,55 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'core/helper/secure_storage_service.dart';
+import 'core/localization/app_translations.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  // لتهيئة فلاتر قبل تشغيل أي ميزة Native
+  WidgetsFlutterBinding.ensureInitialized();
+
+
+  String? savedLang = await SecureStorage.getLanguage();
+  Locale initialLocale;
+
+  if (savedLang == null || savedLang == 'system') {
+
+    Locale? deviceLocale = WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
+        ? WidgetsBinding.instance.platformDispatcher.locales.first
+        : null;
+
+
+    if (deviceLocale != null && deviceLocale.languageCode == 'ar') {
+      initialLocale = const Locale('ar', 'SY');
+    } else {
+      initialLocale = const Locale('en', 'US');
+    }
+  } else if (savedLang == 'ar') {
+    initialLocale = const Locale('ar', 'SY');
+  } else {
+    initialLocale = const Locale('en', 'US');
+  }
+
+
+  runApp(MyApp(initialLocale: initialLocale));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final Locale initialLocale;
 
+  const MyApp({super.key, required this.initialLocale});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
+    return GetMaterialApp(
+      title: 'KidCare Pro',
+      debugShowCheckedModeBanner: false,
 
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
+
+      translations: AppTranslations(),
+      locale: initialLocale,
+      fallbackLocale: const Locale('en', 'US'),
+
       home: const Placeholder(),
     );
   }
 }
-
-
