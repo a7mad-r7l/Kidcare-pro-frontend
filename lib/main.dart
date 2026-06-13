@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
+import 'core/theme/app_themes.dart';
 
 void main() async {
   // لتهيئة فلاتر قبل تشغيل أي ميزة Native
@@ -41,6 +42,10 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
+      theme: AppThemes.lightTheme,
+      darkTheme: AppThemes.darkTheme,
+      themeMode: ThemeMode.system,
+
       title: 'KidCare Pro',
       debugShowCheckedModeBanner: false,
 
