@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
+
 import 'core/theme/app_themes.dart';
 
 // Login paths
@@ -10,15 +12,24 @@ import 'controllers/auth/login_controller.dart';
 import 'core/apis/auth/login_api.dart';
 import 'core/repos/auth/login_repo.dart';
 
+// Home paths
+import 'package:kidcare_pro/views/home/home_view.dart';
+import 'controllers/home/home_controller.dart';
+import 'core/apis/home/home_api.dart';
+import 'core/repos/home/home_repo.dart';
+
 void main() async {
   // لتهيئة فلاتر قبل تشغيل أي ميزة Native
   WidgetsFlutterBinding.ensureInitialized();
+  final String savedToken = await SecureStorage.getToken();
+  final String initialRoute = savedToken.isNotEmpty ? '/doctor_home' : '/login';
 
   String? savedLang = await SecureStorage.getLanguage();
   Locale initialLocale;
 
   if (savedLang == null || savedLang == 'system') {
-    Locale? deviceLocale = WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
+    Locale? deviceLocale =
+        WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
         ? WidgetsBinding.instance.platformDispatcher.locales.first
         : null;
 
@@ -33,13 +44,14 @@ void main() async {
     initialLocale = const Locale('en', 'US');
   }
 
-  runApp(MyApp(initialLocale: initialLocale));
+  runApp(MyApp(initialLocale: initialLocale, initialRoute: initialRoute));
 }
 
 class MyApp extends StatelessWidget {
   final Locale initialLocale;
+  final String initialRoute;
 
-  const MyApp({super.key, required this.initialLocale});
+  const MyApp({super.key, required this.initialLocale, required this.initialRoute});
 
   @override
   Widget build(BuildContext context) {
@@ -55,9 +67,7 @@ class MyApp extends StatelessWidget {
       locale: initialLocale,
       fallbackLocale: const Locale('en', 'US'),
 
-
-      initialRoute: '/login',
-
+      initialRoute: initialRoute,
 
       getPages: [
         GetPage(
@@ -67,12 +77,19 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<LoginApi>(() => LoginApi());
             Get.lazyPut<LoginRepo>(() => LoginRepo(api: Get.find()));
             Get.lazyPut<LoginController>(
-                  () => LoginController(repo: Get.find()),
+              () => LoginController(repo: Get.find()),
             );
           }),
         ),
-
-
+        GetPage(
+          name: '/doctor_home',
+          page: () => const HomeView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<HomeApi>(() => HomeApi());
+            Get.lazyPut<HomeRepo>(() => HomeRepo(api: Get.find()));
+            Get.lazyPut<HomeController>(() => HomeController(repo: Get.find()));
+          }),
+        ),
       ],
     );
   }
