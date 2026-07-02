@@ -29,26 +29,24 @@ class HomeController extends BaseController {
 
   Future<void> fetchAllDashboardData() async {
     showLoading();
-    try {
-      final results = await Future.wait([
-        repo.getDoctorHome(),
-        repo.getTodayAppointmentsCount(),
-        repo.getCompletedAppointmentsToday(),
-        repo.getMonthlyRevenue(),
-        repo.getNextPatient(),
-        repo.getRemainingPatients(),
-      ]);
+    // كل طلب يُعالج بشكل مستقل حتى لا يُعطّل فشل أحدها بقية لوحة التحكم.
+    await Future.wait([
+      _run('getDoctorHome', () async => doctorData.value = await repo.getDoctorHome()),
+      _run('getTodayAppointmentsCount', () async => totalAppointments.value = await repo.getTodayAppointmentsCount()),
+      _run('getCompletedAppointmentsToday', () async => completedAppointments.value = await repo.getCompletedAppointmentsToday()),
+      _run('getMonthlyRevenue', () async => monthlyRevenue.value = await repo.getMonthlyRevenue()),
+      _run('getNextPatient', () async => nextPatient.value = await repo.getNextPatient()),
+      _run('getRemainingPatients', () async => remainingPatients.assignAll(await repo.getRemainingPatients())),
+    ]);
+    hideLoading();
+  }
 
-      doctorData.value = results[0] as DoctorHomeModel;
-      totalAppointments.value = results[1] as int;
-      completedAppointments.value = results[2] as int;
-      monthlyRevenue.value = results[3] as double;
-      nextPatient.value = results[4] as PatientModel?;
-      remainingPatients.assignAll(results[5] as List<PatientModel>);
+  /// ينفّذ مهمة طلب واحدة ويسجّل أي خطأ مع اسمها دون إيقاف بقية الطلبات.
+  Future<void> _run(String name, Future<void> Function() task) async {
+    try {
+      await task();
     } catch (e) {
-      handleError(e);
-    } finally { // 👈 تم تصحيحها هنا من final إلى finally
-      hideLoading();
+      debugPrint('Dashboard call failed: $name -> $e');
     }
   }
 

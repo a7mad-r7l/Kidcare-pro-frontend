@@ -18,6 +18,18 @@ import 'controllers/home/home_controller.dart';
 import 'core/apis/home/home_api.dart';
 import 'core/repos/home/home_repo.dart';
 
+// Examination paths
+import 'views/examination/examination_view.dart';
+import 'controllers/examination/examination_controller.dart';
+import 'core/apis/examination/examination_api.dart';
+import 'core/repos/examination/examination_repo.dart';
+
+// Revenue paths
+import 'views/revenue/revenue_view.dart';
+import 'controllers/revenue/revenue_controller.dart';
+import 'core/apis/revenue/revenue_api.dart';
+import 'core/repos/revenue/revenue_repo.dart';
+
 void main() async {
   // لتهيئة فلاتر قبل تشغيل أي ميزة Native
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,7 +63,11 @@ class MyApp extends StatelessWidget {
   final Locale initialLocale;
   final String initialRoute;
 
-  const MyApp({super.key, required this.initialLocale, required this.initialRoute});
+  const MyApp({
+    super.key,
+    required this.initialLocale,
+    required this.initialRoute,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +104,30 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<HomeApi>(() => HomeApi());
             Get.lazyPut<HomeRepo>(() => HomeRepo(api: Get.find()));
             Get.lazyPut<HomeController>(() => HomeController(repo: Get.find()));
+          }),
+        ),
+        GetPage(
+          name: '/examination',
+          page: () => const ExaminationView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<ExaminationApi>(() => ExaminationApi());
+            Get.lazyPut<ExaminationRepo>(
+              () => ExaminationRepo(api: Get.find()),
+            );
+            Get.lazyPut<ExaminationController>(
+              () => ExaminationController(repo: Get.find()),
+            );
+          }),
+        ),
+        GetPage(
+          name: '/revenue',
+          page: () => const RevenueView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<RevenueApi>(() => RevenueApi());
+            Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
+            Get.lazyPut<RevenueController>(
+              () => RevenueController(repo: Get.find()),
+            );
           }),
         ),
       ],

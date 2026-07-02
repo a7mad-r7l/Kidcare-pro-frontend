@@ -7,8 +7,13 @@ class HomeRepo {
   HomeRepo({required this.api});
 
   String _cleanJson(String response) {
-    if (response.contains('{')) return response.substring(response.indexOf('{'));
-    if (response.contains('[')) return response.substring(response.indexOf('['));
+    final brace = response.indexOf('{');
+    final bracket = response.indexOf('[');
+    // ابدأ من أول قوس يظهر فعليًا (كائن أو مصفوفة) حتى لا نقصّ مصفوفة تبدأ بـ [.
+    if (bracket != -1 && (brace == -1 || bracket < brace)) {
+      return response.substring(bracket);
+    }
+    if (brace != -1) return response.substring(brace);
     return response;
   }
 
