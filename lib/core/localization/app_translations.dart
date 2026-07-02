@@ -3,12 +3,12 @@ import 'package:get/get.dart';
 class AppTranslations extends Translations {
   @override
   Map<String, Map<String, String>> get keys => {
-    //القاموس الإنجليزي
+    // القاموس الإنجليزي
     'en_US': {
       // --- Login View ---
       'Doctor Login': 'Doctor Login',
       'Welcome back to Clinic Management System':
-          'Welcome back to Clinic Management System',
+      'Welcome back to Clinic Management System',
       'Mobile Number': 'Mobile Number',
       'Please enter mobile number': 'Please enter mobile number',
       'Invalid mobile number': 'Invalid mobile number',
@@ -47,13 +47,16 @@ class AppTranslations extends Translations {
       'Wednesday': 'Wednesday',
       'Thursday': 'Thursday',
       'Friday': 'Friday',
-      'Saturday':'Saturday',
-      'Search for patient name or file number': 'Search for patient name or file number',
+      'Saturday': 'Saturday',
+      'Search for patient name or file number':
+      'Search for patient name or file number',
       'View Medical File': 'View Medical File',
       'Phone': 'Phone',
       'No patients found': 'No patients found',
 
       // --- Home View ---
+
+      // --- Home & Dashboard View ---
       'Hello': 'Hello',
       'Today': 'Today',
       'Appointments': 'Appointments',
@@ -73,7 +76,7 @@ class AppTranslations extends Translations {
       'Schedule': 'Schedule',
       'Settings': 'Settings',
       'No remaining patients for this date':
-          'No remaining patients for this date',
+      'No remaining patients for this date',
       'Patients': 'Patients',
 
       // --- Revenue View ---
@@ -97,9 +100,9 @@ class AppTranslations extends Translations {
       'Clinical Diagnosis': 'Clinical Diagnosis',
       'General Doctor Notes': 'General Doctor Notes',
       'Write the clinical diagnosis for the case':
-          'Write the clinical diagnosis for the case',
+      'Write the clinical diagnosis for the case',
       "Write any general notes about the child's condition":
-          "Write any general notes about the child's condition",
+      "Write any general notes about the child's condition",
       'Optional': 'Optional',
       'Height': 'Height',
       'Weight': 'Weight',
@@ -123,10 +126,66 @@ class AppTranslations extends Translations {
       'Diagnosis saved successfully': 'Diagnosis saved successfully',
       'Please enter the diagnosis': 'Please enter the diagnosis',
       'Please enter both height and weight':
-          'Please enter both height and weight',
+      'Please enter both height and weight',
       'Please save the diagnosis first': 'Please save the diagnosis first',
       'Please complete all medication fields':
-          'Please complete all medication fields',
+      'Please complete all medication fields',
+
+      // --- Settings Section (New) ---
+      'Working Settings': 'Working Settings',
+      'Manage working hours and availability':
+      'Manage working hours and availability',
+      'Change Password': 'Change Password',
+      'Update your account password': 'Update your account password',
+      'Language': 'Language',
+      'Theme': 'Theme',
+      'Customize app language and view': 'Customize app language and view',
+      'Delete Account': 'Delete Account',
+      'Permanently delete your account from the app':
+      'Permanently delete your account from the app',
+
+      // --- Availability View ---
+      'Clinic Settings': 'Clinic Settings',
+      'Enter Working Day': 'Enter Working Day',
+      'Day': 'Day',
+      'Start Time': 'Start Time',
+      'End Time': 'End Time',
+      'This day will be saved as your available working hours.':
+      'This day will be saved as your available working hours.',
+      'Save Working Hours': 'Save Working Hours',
+      'monday': 'Monday',
+      'tuesday': 'Tuesday',
+      'wednesday': 'Wednesday',
+      'thursday': 'Thursday',
+      'friday': 'Friday',
+      'saturday': 'Saturday',
+      'sunday': 'Sunday',
+      'System Language': 'System Language',
+      'Arabic': 'Arabic',
+      'English': 'English',
+      'Start Examination': 'Start Examination',
+      'Current Patients': 'Current Patients',
+      'Yrs': 'Yrs',
+      'Change Password?': 'Change Password?',
+      'Enter your registered mobile number to reset your password.':
+      'Enter your registered mobile number to reset your password.',
+      'Phone number must be exactly 12 digits and start with 963':
+      'Phone number must be exactly 12 digits and start with 963',
+      'Send OTP': 'Send OTP',
+      'Verify OTP': 'Verify OTP',
+      'A 4-digit code has been sent to your registered number.':
+      'A 4-digit code has been sent to your registered number.',
+      'Please enter a valid 4-digit OTP': 'Please enter a valid 4-digit OTP',
+      'Verify': 'Verify',
+      'Create New Password': 'Create New Password',
+      'Your new password must be different from previous ones.':
+      'Your new password must be different from previous ones.',
+      'New Password': 'New Password',
+      'Confirm Password': 'Confirm Password',
+      'Password must be at least 6 characters long':
+      'Password must be at least 6 characters long',
+      'Passwords do not match': 'Passwords do not match',
+      'Reset Password': 'Reset Password',
     },
 
     // القاموس العربي
@@ -134,7 +193,7 @@ class AppTranslations extends Translations {
       // --- Login View ---
       'Doctor Login': 'تسجيل دخول الطبيب',
       'Welcome back to Clinic Management System':
-          'مرحباً بك مجدداً في نظام إدارة العيادة',
+      'مرحباً بك مجدداً في نظام إدارة العيادة',
       'Mobile Number': 'رقم الموبايل',
       'Please enter mobile number': 'الرجاء إدخال رقم الموبايل',
       'Invalid mobile number': 'رقم الموبايل غير صالح',
@@ -173,13 +232,16 @@ class AppTranslations extends Translations {
       'Wednesday': 'الأربعاء',
       'Thursday': 'الخميس',
       'Friday': 'الجمعة',
-      'Saturday':'السبت',
-      'Search for patient name or file number': 'ابحث عن اسم الطفل أو رقم الملف',
+      'Saturday': 'السبت',
+      'Search for patient name or file number':
+      'ابحث عن اسم الطفل أو رقم الملف',
       'View Medical File': 'عرض الملف الطبي',
       'Phone': 'الهاتف',
       'No patients found': 'لم يتم العثور على مرضى',
 
       // --- Home View ---
+
+      // --- Home & Dashboard View ---
       'Hello': 'مرحباً',
       'Today': 'اليوم',
       'Appointments': 'مواعيد',
@@ -222,9 +284,9 @@ class AppTranslations extends Translations {
       'Clinical Diagnosis': 'التشخيص السريري',
       'General Doctor Notes': 'ملاحظات الطبيب العامة',
       'Write the clinical diagnosis for the case':
-          'اكتب التشخيص السريري للحالة',
+      'اكتب التشخيص السريري للحالة',
       "Write any general notes about the child's condition":
-          'اكتب أي ملاحظات عامة حول حالة الطفل',
+      'اكتب أي ملاحظات عامة حول حالة الطفل',
       'Optional': 'اختياري',
       'Height': 'الطول',
       'Weight': 'الوزن',
@@ -250,6 +312,61 @@ class AppTranslations extends Translations {
       'Please enter both height and weight': 'الرجاء إدخال الطول والوزن معاً',
       'Please save the diagnosis first': 'الرجاء حفظ التشخيص أولاً',
       'Please complete all medication fields': 'الرجاء إكمال جميع حقول الدواء',
+
+      // --- Settings Section (New) ---
+      'Working Settings': 'إعدادات العمل',
+      'Manage working hours and availability': 'إدارة أوقات العمل والتوافر',
+      'Change Password': 'تغيير كلمة المرور',
+      'Update your account password': 'تحديث كلمة المرور لحسابك',
+      'Language': 'اللغة',
+      'Theme': 'المظهر',
+      'Customize app language and view': 'تخصيص لغة التطبيق والمظهر',
+      'Delete Account': 'حذف الحساب',
+      'Permanently delete your account from the app':
+      'حذف حسابك بشكل دائم من التطبيق',
+
+      // --- Availability View ---
+      'Clinic Settings': 'إعدادات العيادة',
+      'Enter Working Day': 'أدخل يوم العمل',
+      'Day': 'اليوم',
+      'Start Time': 'وقت البداية',
+      'End Time': 'وقت النهاية',
+      'This day will be saved as your available working hours.':
+      'سيتم حفظ هذا اليوم باعتباره وقت دوامك المتاح.',
+      'Save Working Hours': 'حفظ وقت الدوام',
+      'monday': 'الاثنين',
+      'tuesday': 'الثلاثاء',
+      'wednesday': 'الأربعاء',
+      'thursday': 'الخميس',
+      'friday': 'الجمعة',
+      'saturday': 'السبت',
+      'sunday': 'الأحد',
+      'System Language': 'لغة النظام',
+      'Arabic': 'العربية',
+      'English': 'الإنجليزية',
+      'Start Examination': 'بدء الفحص',
+      'Current Patients': 'المرضى الحاليون',
+      'Yrs': 'سنوات',
+      'Change Password?': 'تغيير كلمة المرور؟',
+      'Enter your registered mobile number to reset your password.':
+      'أدخل رقم الموبايل المسجل لإعادة ضبط كلمة المرور الخاصة بك.',
+      'Phone number must be exactly 12 digits and start with 963':
+      'رقم الهاتف يجب أن يكون 12 رقماً ويبدأ بـ 963',
+      'Send OTP': 'إرسال الرمز',
+      'Verify OTP': 'تأكيد الرمز',
+      'A 4-digit code has been sent to your registered number.':
+      'تم إرسال رمز من 4 أرقام إلى رقمك المسجل.',
+      'Please enter a valid 4-digit OTP': 'الرجاء إدخال رمز صحيح من 4 أرقام',
+      'Verify': 'تأكيد',
+      'Create New Password': 'إنشاء كلمة مرور جديدة',
+      'Your new password must be different from previous ones.':
+      'يجب أن تكون كلمة المرور الجديدة مختلفة عن السابقة.',
+      'New Password': 'كلمة المرور الجديدة',
+      'Confirm Password': 'تأكيد كلمة المرور',
+      'Password must be at least 6 characters long':
+      'كلمة المرور يجب أن لا تقل عن 6 أحرف',
+      'Passwords do not match': 'كلمتا المرور غير متطابقتين',
+      'Reset Password': 'إعادة ضبط كلمة المرور',
     },
   };
 }

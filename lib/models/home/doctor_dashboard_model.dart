@@ -38,14 +38,20 @@ class PatientModel {
   factory PatientModel.fromJson(Map<String, dynamic> json) {
     return PatientModel(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+
       appointmentId: json['appointment_id'] is int
           ? json['appointment_id']
           : int.tryParse(json['appointment_id']?.toString() ?? '0') ?? 0,
-      name: json['name']?.toString() ?? '',
+      //name: json['name']?.toString() ?? '',
+
+      // ─── توافقية مع مسار appointmentsByDate (patient_name) ومسار remaining (name) ───
+      name: json['name']?.toString() ?? json['patient_name']?.toString() ?? '',
+
       age: json['age'] is int ? json['age'] : int.tryParse(json['age']?.toString() ?? '0') ?? 0,
       gender: json['gender']?.toString() ?? 'male',
       image: json['image']?.toString() ?? '',
-      appointmentTime: json['appointment_time']?.toString() ?? '',
+      // ─── توافقية مع اختلاف أسماء حقول الوقت ───
+      appointmentTime: json['appointment_time']?.toString() ?? json['time']?.toString() ?? '',
     );
   }
 }

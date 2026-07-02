@@ -1,54 +1,62 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
-
 import 'core/theme/app_themes.dart';
 
-// Login paths
+// Login
 import 'views/auth/login_view.dart';
 import 'controllers/auth/login_controller.dart';
 import 'core/apis/auth/login_api.dart';
 import 'core/repos/auth/login_repo.dart';
 
-// Home paths
-import 'package:kidcare_pro/views/home/home_view.dart';
+// Home
+import 'views/home/home_view.dart';
 import 'controllers/home/home_controller.dart';
 import 'core/apis/home/home_api.dart';
 import 'core/repos/home/home_repo.dart';
 
-// Examination paths
+// Examination
 import 'views/examination/examination_view.dart';
 import 'controllers/examination/examination_controller.dart';
 import 'core/apis/examination/examination_api.dart';
 import 'core/repos/examination/examination_repo.dart';
 
-// Revenue paths
+// Revenue
 import 'views/revenue/revenue_view.dart';
 import 'controllers/revenue/revenue_controller.dart';
 import 'core/apis/revenue/revenue_api.dart';
 import 'core/repos/revenue/revenue_repo.dart';
 
-// Schedule paths
-import 'views/schedule/schedule_view.dart';
+// Schedule & Patients
 import 'controllers/schedule/schedule_controller.dart';
 import 'core/apis/schedule/schedule_api.dart';
 import 'core/repos/schedule/schedule_repo.dart';
-import 'package:intl/date_symbol_data_local.dart';
 import 'views/schedule/appointment_details_view.dart';
 import 'controllers/schedule/appointment_details_controller.dart';
 import 'core/apis/schedule/appointment_details_api.dart';
 import 'core/repos/schedule/appointment_details_repo.dart';
-import 'views/schedule/patients_view.dart';
 import 'controllers/schedule/patients_controller.dart';
 import 'core/apis/schedule/patients_api.dart';
 import 'core/repos/schedule/patients_repo.dart';
 
+// Settings & Auth
+import 'views/auth/password_reset_view.dart';
+import 'views/settings/doctor_availability_view.dart';
+import 'controllers/auth/password_reset_controller.dart';
+import 'controllers/settings/doctor_availability_controller.dart';
+import 'controllers/settings/settings_controller.dart';
+import 'core/apis/auth/password_reset_api.dart';
+import 'core/apis/settings/doctor_availability_api.dart';
+import 'core/repos/auth/password_reset_repo.dart';
+import 'core/repos/settings/doctor_availability_repo.dart';
+
 void main() async {
-  // لتهيئة فلاتر قبل تشغيل أي ميزة Native
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting();
+
   final String savedToken = await SecureStorage.getToken();
   final String initialRoute = savedToken.isNotEmpty ? '/doctor_home' : '/login';
 
@@ -56,11 +64,9 @@ void main() async {
   Locale initialLocale;
 
   if (savedLang == null || savedLang == 'system') {
-    Locale? deviceLocale =
-        WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
+    Locale? deviceLocale = WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
         ? WidgetsBinding.instance.platformDispatcher.locales.first
         : null;
-
     if (deviceLocale != null && deviceLocale.languageCode == 'ar') {
       initialLocale = const Locale('ar', 'SY');
     } else {
@@ -79,11 +85,7 @@ class MyApp extends StatelessWidget {
   final Locale initialLocale;
   final String initialRoute;
 
-  const MyApp({
-    super.key,
-    required this.initialLocale,
-    required this.initialRoute,
-  });
+  const MyApp({super.key, required this.initialLocale, required this.initialRoute});
 
   @override
   Widget build(BuildContext context) {
@@ -91,16 +93,12 @@ class MyApp extends StatelessWidget {
       theme: AppThemes.lightTheme,
       darkTheme: AppThemes.darkTheme,
       themeMode: ThemeMode.system,
-
       title: 'KidCare Pro',
       debugShowCheckedModeBanner: false,
-
       translations: AppTranslations(),
       locale: initialLocale,
       fallbackLocale: const Locale('en', 'US'),
-
       initialRoute: initialRoute,
-
       getPages: [
         GetPage(
           name: '/login',
@@ -108,9 +106,7 @@ class MyApp extends StatelessWidget {
           binding: BindingsBuilder(() {
             Get.lazyPut<LoginApi>(() => LoginApi());
             Get.lazyPut<LoginRepo>(() => LoginRepo(api: Get.find()));
-            Get.lazyPut<LoginController>(
-              () => LoginController(repo: Get.find()),
-            );
+            Get.lazyPut<LoginController>(() => LoginController(repo: Get.find()));
           }),
         ),
         GetPage(
@@ -122,31 +118,49 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<AppointmentDetailsController>(() => AppointmentDetailsController(repo: Get.find()));
           }),
         ),
+        // ─── مسار الهوم المدمج والخالي من الأخطاء ───
         GetPage(
           name: '/doctor_home',
           page: () => const HomeView(),
           binding: BindingsBuilder(() {
-            // Home Bindings
+            // Home
             Get.lazyPut<HomeApi>(() => HomeApi());
             Get.lazyPut<HomeRepo>(() => HomeRepo(api: Get.find()));
             Get.lazyPut<HomeController>(() => HomeController(repo: Get.find()));
 
-            // Schedule Bindings (تمت إضافتها هنا)
+            // Schedule & Patients
             Get.lazyPut<ScheduleApi>(() => ScheduleApi());
             Get.lazyPut<ScheduleRepo>(() => ScheduleRepo(api: Get.find()));
             Get.lazyPut<ScheduleController>(() => ScheduleController(repo: Get.find()));
             Get.lazyPut<PatientsApi>(() => PatientsApi());
             Get.lazyPut<PatientsRepo>(() => PatientsRepo(api: Get.find()));
             Get.lazyPut<PatientsController>(() => PatientsController(repo: Get.find()));
+
+            // Revenue (مهم جداً لحماية التبويب الثالث من الانهيار)
+            Get.lazyPut<RevenueApi>(() => RevenueApi());
+            Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
+            Get.lazyPut<RevenueController>(() => RevenueController(repo: Get.find()));
+
+            // Settings
+            Get.lazyPut<SettingsController>(() => SettingsController());
           }),
         ),
         GetPage(
-          name: '/doctor_home',
-          page: () => const HomeView(),
+          name: '/doctor_availability',
+          page: () => const DoctorAvailabilityView(),
           binding: BindingsBuilder(() {
-            Get.lazyPut<HomeApi>(() => HomeApi());
-            Get.lazyPut<HomeRepo>(() => HomeRepo(api: Get.find()));
-            Get.lazyPut<HomeController>(() => HomeController(repo: Get.find()));
+            Get.lazyPut<DoctorAvailabilityApi>(() => DoctorAvailabilityApi());
+            Get.lazyPut<DoctorAvailabilityRepo>(() => DoctorAvailabilityRepo(api: Get.find()));
+            Get.lazyPut<DoctorAvailabilityController>(() => DoctorAvailabilityController(repo: Get.find()));
+          }),
+        ),
+        GetPage(
+          name: '/password_reset',
+          page: () => const PasswordResetView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<PasswordResetApi>(() => PasswordResetApi());
+            Get.lazyPut<PasswordResetRepo>(() => PasswordResetRepo(api: Get.find()));
+            Get.lazyPut<PasswordResetController>(() => PasswordResetController(repo: Get.find()));
           }),
         ),
         GetPage(
@@ -154,23 +168,8 @@ class MyApp extends StatelessWidget {
           page: () => const ExaminationView(),
           binding: BindingsBuilder(() {
             Get.lazyPut<ExaminationApi>(() => ExaminationApi());
-            Get.lazyPut<ExaminationRepo>(
-              () => ExaminationRepo(api: Get.find()),
-            );
-            Get.lazyPut<ExaminationController>(
-              () => ExaminationController(repo: Get.find()),
-            );
-          }),
-        ),
-        GetPage(
-          name: '/revenue',
-          page: () => const RevenueView(),
-          binding: BindingsBuilder(() {
-            Get.lazyPut<RevenueApi>(() => RevenueApi());
-            Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
-            Get.lazyPut<RevenueController>(
-              () => RevenueController(repo: Get.find()),
-            );
+            Get.lazyPut<ExaminationRepo>(() => ExaminationRepo(api: Get.find()));
+            Get.lazyPut<ExaminationController>(() => ExaminationController(repo: Get.find()));
           }),
         ),
       ],

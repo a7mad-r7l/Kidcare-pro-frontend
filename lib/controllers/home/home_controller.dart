@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
+import '../../core/constants.dart';
 import '../../core/repos/home/home_repo.dart';
 import '../../models/home/doctor_dashboard_model.dart';
 import '../base_controller.dart';
 
 class HomeController extends BaseController {
   final HomeRepo repo;
+
   HomeController({required this.repo});
 
   final currentIndex = 0.obs;
   final selectedDate = DateTime.now().obs;
 
-  String get formattedSelectedDate => DateFormat('yyyy-MM-dd').format(selectedDate.value);
+  // تنسيق للـ API (yyyy-MM-dd)
+  String get formattedSelectedDate =>
+      DateFormat('yyyy-MM-dd').format(selectedDate.value);
+
+  // تنسيق للعرض في واجهة المستخدم (مثل التصميم)
+  String get displaySelectedDate =>
+      DateFormat('yyyy - MM - dd').format(selectedDate.value);
 
   final doctorData = Rxn<DoctorHomeModel>();
   final totalAppointments = 0.obs;
@@ -27,47 +35,67 @@ class HomeController extends BaseController {
     fetchAllDashboardData();
   }
 
-  Future<void> fetchAllDashboardData() async {
-    showLoading();
-    // كل طلب يُعالج بشكل مستقل حتى لا يُعطّل فشل أحدها بقية لوحة التحكم.
-    await Future.wait([
-      _run('getDoctorHome', () async => doctorData.value = await repo.getDoctorHome()),
-      _run('getTodayAppointmentsCount', () async => totalAppointments.value = await repo.getTodayAppointmentsCount()),
-      _run('getCompletedAppointmentsToday', () async => completedAppointments.value = await repo.getCompletedAppointmentsToday()),
-      _run('getMonthlyRevenue', () async => monthlyRevenue.value = await repo.getMonthlyRevenue()),
-      _run('getNextPatient', () async => nextPatient.value = await repo.getNextPatient()),
-      _run('getRemainingPatients', () async => remainingPatients.assignAll(await repo.getRemainingPatients())),
-    ]);
-    hideLoading();
+  // دالة حل مسار الصور
+  String resolveImageUrl(String path) {
+    if (path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    return '$baseUrl/$path';
   }
 
-  /// ينفّذ مهمة طلب واحدة ويسجّل أي خطأ مع اسمها دون إيقاف بقية الطلبات.
-  Future<void> _run(String name, Future<void> Function() task) async {
+  // دالة تنسيق الوقت (ص / م)
+  String formatTime(String time24) {
+    if (time24.isEmpty) return '';
     try {
-      await task();
+      final parts = time24.split(':');
+      int hour = int.parse(parts[0]);
+      int minute = int.parse(parts[1]);
+
+      String amPm = hour < 12 ? 'AM' : 'PM';
+      if (Get.locale?.languageCode == 'ar') {
+        amPm = hour < 12 ? 'ص' : 'م';
+      }
+
+      int hour12 = hour % 12;
+      if (hour12 == 0) hour12 = 12;
+
+      return '$hour12:${minute.toString().padLeft(2, '0')} $amPm';
     } catch (e) {
-      debugPrint('Dashboard call failed: $name -> $e');
+      return time24;
+    }
+  }
+
+  Future<void> fetchAllDashboardData() async {
+    showLoading();
+    try {
+      final results = await Future.wait([
+        repo.getDoctorHome(),
+        repo.getTodayAppointmentsCount(),
+        repo.getCompletedAppointmentsToday(),
+        repo.getMonthlyRevenue(),
+        repo.getNextPatient(),
+        repo.getRemainingPatients(),
+      ]);
+
+      doctorData.value = results[0] as DoctorHomeModel;
+      totalAppointments.value = results[1] as int;
+      completedAppointments.value = results[2] as int;
+      monthlyRevenue.value = results[3] as double;
+      nextPatient.value = results[4] as PatientModel?;
+      remainingPatients.assignAll(results[5] as List<PatientModel>);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
     }
   }
 
   Future<void> selectCustomDate(BuildContext context) async {
+    // ─── تم إزالة الـ Theme الإجباري الخاطئ ليعمل التقويم بشكل سليم في كل الثيمات ───
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate.value,
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: context.theme.primaryColor,
-              onPrimary: Colors.white,
-              onSurface: context.theme.textTheme.bodyLarge?.color ?? Colors.black,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
 
     if (picked != null && picked != selectedDate.value) {
@@ -79,11 +107,12 @@ class HomeController extends BaseController {
   Future<void> fetchRemainingPatientsForSelectedDate() async {
     showLoading();
     try {
-      final patients = await repo.getRemainingPatients();
+      // ─── الاعتماد على دالة التاريخ الصحيحة لتحديث القائمة حسب اختيار الطبيب ───
+      final patients = await repo.getAppointmentsByDate(formattedSelectedDate);
       remainingPatients.assignAll(patients);
     } catch (e) {
       handleError(e);
-    } finally { // 👈 تم تصحيحها هنا أيضاً من final إلى finally
+    } finally {
       hideLoading();
     }
   }
@@ -96,7 +125,7 @@ class HomeController extends BaseController {
       await fetchAllDashboardData();
     } catch (e) {
       handleError(e);
-    } finally { // 👈 تم تصحيحها هنا من final إلى finally
+    } finally {
       hideLoading();
     }
   }

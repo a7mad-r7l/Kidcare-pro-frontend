@@ -6,7 +6,9 @@ class HomeRepo {
   final HomeApi api;
   HomeRepo({required this.api});
 
+  // ─── الحل الجذري لمشكلة قص الـ JSON غير الصالح ───
   String _cleanJson(String response) {
+
     final brace = response.indexOf('{');
     final bracket = response.indexOf('[');
     // ابدأ من أول قوس يظهر فعليًا (كائن أو مصفوفة) حتى لا نقصّ مصفوفة تبدأ بـ [.
@@ -14,6 +16,12 @@ class HomeRepo {
       return response.substring(bracket);
     }
     if (brace != -1) return response.substring(brace);
+
+    final startIndex = response.indexOf(RegExp(r'[\{\[]'));
+    if (startIndex != -1) {
+      return response.substring(startIndex);
+    }
+
     return response;
   }
 
@@ -39,6 +47,16 @@ class HomeRepo {
     final decoded = jsonDecode(_cleanJson(res));
     if (decoded is List) {
       return decoded.map((e) => PatientModel.fromJson(e)).toList();
+    }
+    return [];
+  }
+
+  // ─── جلب وتحليل المواعيد حسب التاريخ للـ Picker ───
+  Future<List<PatientModel>> getAppointmentsByDate(String date) async {
+    final res = await api.getAppointmentsByDate(date);
+    final decoded = jsonDecode(_cleanJson(res));
+    if (decoded['status'] == 'success' && decoded['data'] != null && decoded['data']['appointments'] is List) {
+      return (decoded['data']['appointments'] as List).map((e) => PatientModel.fromJson(e)).toList();
     }
     return [];
   }
