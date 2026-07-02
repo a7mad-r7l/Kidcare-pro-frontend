@@ -30,9 +30,25 @@ import 'controllers/revenue/revenue_controller.dart';
 import 'core/apis/revenue/revenue_api.dart';
 import 'core/repos/revenue/revenue_repo.dart';
 
+// Schedule paths
+import 'views/schedule/schedule_view.dart';
+import 'controllers/schedule/schedule_controller.dart';
+import 'core/apis/schedule/schedule_api.dart';
+import 'core/repos/schedule/schedule_repo.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'views/schedule/appointment_details_view.dart';
+import 'controllers/schedule/appointment_details_controller.dart';
+import 'core/apis/schedule/appointment_details_api.dart';
+import 'core/repos/schedule/appointment_details_repo.dart';
+import 'views/schedule/patients_view.dart';
+import 'controllers/schedule/patients_controller.dart';
+import 'core/apis/schedule/patients_api.dart';
+import 'core/repos/schedule/patients_repo.dart';
+
 void main() async {
   // لتهيئة فلاتر قبل تشغيل أي ميزة Native
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting();
   final String savedToken = await SecureStorage.getToken();
   final String initialRoute = savedToken.isNotEmpty ? '/doctor_home' : '/login';
 
@@ -95,6 +111,33 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<LoginController>(
               () => LoginController(repo: Get.find()),
             );
+          }),
+        ),
+        GetPage(
+          name: '/appointment_details',
+          page: () => const AppointmentDetailsView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<AppointmentDetailsApi>(() => AppointmentDetailsApi());
+            Get.lazyPut<AppointmentDetailsRepo>(() => AppointmentDetailsRepo(api: Get.find()));
+            Get.lazyPut<AppointmentDetailsController>(() => AppointmentDetailsController(repo: Get.find()));
+          }),
+        ),
+        GetPage(
+          name: '/doctor_home',
+          page: () => const HomeView(),
+          binding: BindingsBuilder(() {
+            // Home Bindings
+            Get.lazyPut<HomeApi>(() => HomeApi());
+            Get.lazyPut<HomeRepo>(() => HomeRepo(api: Get.find()));
+            Get.lazyPut<HomeController>(() => HomeController(repo: Get.find()));
+
+            // Schedule Bindings (تمت إضافتها هنا)
+            Get.lazyPut<ScheduleApi>(() => ScheduleApi());
+            Get.lazyPut<ScheduleRepo>(() => ScheduleRepo(api: Get.find()));
+            Get.lazyPut<ScheduleController>(() => ScheduleController(repo: Get.find()));
+            Get.lazyPut<PatientsApi>(() => PatientsApi());
+            Get.lazyPut<PatientsRepo>(() => PatientsRepo(api: Get.find()));
+            Get.lazyPut<PatientsController>(() => PatientsController(repo: Get.find()));
           }),
         ),
         GetPage(

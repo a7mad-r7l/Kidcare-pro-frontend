@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/home/home_controller.dart';
 import '../../core/constants.dart';
+import '../schedule/patients_view.dart';
+import '../schedule/schedule_view.dart'; // 👈 استدعاء شاشة الجدول
 
 /// يبني رابط الصورة: يُرجع الرابط كما هو إن كان مطلقًا، وإلا يضيف [baseUrl].
 String _imageUrl(String path) {
@@ -22,30 +24,66 @@ class HomeView extends GetView<HomeController> {
       // ─── استدعاء الـ Custom Floating Bottom Navigation Bar ───
       bottomNavigationBar: _buildFloatingBottomBar(context),
 
+      // ─── التحكم في عرض الشاشات بناءً على الفهرس ───
       body: Obx(() {
-        if (controller.isLoading && controller.doctorData.value == null) {
-          return const Center(child: CircularProgressIndicator());
+        switch (controller.currentIndex.value) {
+          case 0:
+            return _buildDashboardBody(context); // الرئيسية
+          case 1:
+            return const ScheduleView();         // الجدول
+          case 2:
+            return const PatientsView(); // المرضى (مؤقت)
+          case 3:
+            return Center(child: Text('Revenue View'.tr));  // الأرباح (مؤقت)
+          case 4:
+            return Center(child: Text('Settings View'.tr)); // الإعدادات (مؤقت)
+          default:
+            return _buildDashboardBody(context);
         }
-        return RefreshIndicator(
-          onRefresh: () => controller.fetchAllDashboardData(),
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // الـ Curved Header الاحترافي الباقي كما هو وثابت
-                _buildCurvedHeader(context),
+      }),
+    );
+  }
 
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+  // ─── محتوى الصفحة الرئيسية (الاندكس 0) ───
+  Widget _buildDashboardBody(BuildContext context) {
+    if (controller.isLoading && controller.doctorData.value == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return RefreshIndicator(
+      onRefresh: () => controller.fetchAllDashboardData(),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildCurvedHeader(context),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 20),
+
+                  Text(
+                    'Next Patient'.tr,
+                    style: context.theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildNextPatientCard(context),
+
+                  const SizedBox(height: 24),
+                  _buildStatsGrid(context),
+                  const SizedBox(height: 24),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const SizedBox(height: 20),
-
-                      // ─── 1. الـ Next Patient أصبح في الأعلى أولاً ───
                       Text(
-                        'Next Patient'.tr,
+                        'Remaining Patients'.tr,
                         style: context.theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
@@ -71,43 +109,37 @@ class HomeView extends GetView<HomeController> {
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
                             ),
+                      InkWell(
+                        onTap: () => controller.selectCustomDate(context),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 10,
                           ),
-                          // زر محدد التاريخ الديناميكي المظهر للتاريخ الحالي
-                          InkWell(
-                            onTap: () => controller.selectCustomDate(context),
+                          decoration: BoxDecoration(
+                            color: context.theme.primaryColor.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 6,
-                                horizontal: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: context.theme.primaryColor.withOpacity(
-                                  0.08,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.calendar_month,
-                                    size: 16,
-                                    color: context.theme.primaryColor,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    controller.formattedSelectedDate,
-                                    style: TextStyle(
-                                      color: context.theme.primaryColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ),
-                        ],
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.calendar_month,
+                                size: 16,
+                                color: context.theme.primaryColor,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                controller.formattedSelectedDate,
+                                style: TextStyle(
+                                  color: context.theme.primaryColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 12),
 
@@ -118,12 +150,17 @@ class HomeView extends GetView<HomeController> {
                       const SizedBox(height: 100),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 12),
+
+                  _buildRemainingPatientsList(context),
+
+                  const SizedBox(height: 100),
+                ],
+              ),
             ),
-          ),
-        );
-      }),
+          ],
+        ),
+      ),
     );
   }
 
@@ -147,6 +184,11 @@ class HomeView extends GetView<HomeController> {
                 color: context.theme.primaryColor.withOpacity(
                   0.12,
                 ), // ظلال بلون هوية التطبيق تعطي عمقاً جذاباً
+            color: context.theme.cardColor,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: context.theme.primaryColor.withValues(alpha: 0.12),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),
@@ -155,6 +197,7 @@ class HomeView extends GetView<HomeController> {
               color: context.theme.dividerColor.withOpacity(
                 0.05,
               ), // حد خفيف للبروز المعماري
+              color: context.theme.dividerColor.withValues(alpha: 0.05),
               width: 1,
             ),
           ),
@@ -192,7 +235,7 @@ class HomeView extends GetView<HomeController> {
   ) {
     final isSelected = controller.currentIndex.value == index;
     final activeColor = context.theme.primaryColor;
-    final inactiveColor = context.theme.hintColor.withOpacity(0.4);
+    final inactiveColor = context.theme.hintColor.withValues(alpha: 0.4);
 
     return InkWell(
       onTap: () => controller.currentIndex.value = index,
@@ -207,13 +250,13 @@ class HomeView extends GetView<HomeController> {
           color: isSelected
               ? activeColor.withOpacity(0.08)
               : Colors.transparent,
+          color: isSelected ? activeColor.withValues(alpha: 0.08) : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // تأثير حركي لتكبير الأيقونة المحددة بسلاسة (Scale Animation)
             AnimatedScale(
               scale: isSelected ? 1.15 : 1.0,
               duration: const Duration(milliseconds: 200),
@@ -280,7 +323,7 @@ class HomeView extends GetView<HomeController> {
                 Text(
                   doctor?.specialization ?? '',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha: 0.7),
                     fontSize: 13,
                   ),
                 ),
@@ -348,7 +391,7 @@ class HomeView extends GetView<HomeController> {
       decoration: BoxDecoration(
         color: context.theme.cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.theme.dividerColor.withOpacity(0.04)),
+        border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.04)),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -400,6 +443,24 @@ class HomeView extends GetView<HomeController> {
               context.theme.primaryColor.withOpacity(0.85),
               context.theme.primaryColor,
             ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            context.theme.primaryColor.withValues(alpha: 0.85),
+            context.theme.primaryColor,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 26,
+            backgroundImage: patient.image.isNotEmpty
+                ? NetworkImage('$baseUrl/${patient.image}')
+                : null,
           ),
           borderRadius: BorderRadius.circular(16),
         ),
@@ -478,7 +539,7 @@ class HomeView extends GetView<HomeController> {
             color: context.theme.cardColor,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: context.theme.dividerColor.withOpacity(0.04),
+              color: context.theme.dividerColor.withValues(alpha: 0.04),
             ),
           ),
           child: Row(

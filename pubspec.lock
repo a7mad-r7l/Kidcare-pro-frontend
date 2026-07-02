@@ -432,6 +432,10 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.12.19"
+      sha256: "12956d0ad8390bbcc63ca2e1469c0619946ccb52809807067a7020d57e647aa6"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.12.18"
   material_color_utilities:
     dependency: transitive
     description:
@@ -637,6 +641,10 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.10"
+      sha256: "19a78f63e83d3a61f00826d09bc2f60e191bf3504183c001262be6ac75589fb8"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.7.8"
   typed_data:
     dependency: transitive
     description:
