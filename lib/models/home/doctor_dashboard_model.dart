@@ -18,6 +18,7 @@ class DoctorHomeModel {
 
 class PatientModel {
   final int id;
+  final int appointmentId;
   final String name;
   final int age;
   final String gender;
@@ -26,6 +27,7 @@ class PatientModel {
 
   PatientModel({
     required this.id,
+    required this.appointmentId,
     required this.name,
     required this.age,
     required this.gender,
@@ -36,6 +38,9 @@ class PatientModel {
   factory PatientModel.fromJson(Map<String, dynamic> json) {
     return PatientModel(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      appointmentId: json['appointment_id'] is int
+          ? json['appointment_id']
+          : int.tryParse(json['appointment_id']?.toString() ?? '0') ?? 0,
       name: json['name']?.toString() ?? '',
       age: json['age'] is int ? json['age'] : int.tryParse(json['age']?.toString() ?? '0') ?? 0,
       gender: json['gender']?.toString() ?? 'male',
