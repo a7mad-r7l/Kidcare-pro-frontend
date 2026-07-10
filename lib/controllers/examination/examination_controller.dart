@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../core/repos/examination/examination_repo.dart';
 import '../../models/home/doctor_dashboard_model.dart';
 import '../base_controller.dart';
+import '../home/home_controller.dart';
 
 // حامل بسيط لحقول دواء واحد في الواجهة (إضافة دواء آخر تضيف نسخة جديدة)
 class MedicationFormData {
@@ -49,6 +50,7 @@ class LabRequestItem {
 
 class ExaminationController extends BaseController {
   final ExaminationRepo repo;
+
   ExaminationController({required this.repo});
 
   // 0 = التشخيص ، 1 = الوصفة
@@ -244,7 +246,13 @@ class ExaminationController extends BaseController {
         );
       }
 
-      final msg = await repo.completeAppointment(patient.value?.appointmentId ?? 0);
+      final msg = await repo.completeAppointment(
+        patient.value?.appointmentId ?? 0,
+      );
+
+      if (Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().fetchAllDashboardData();
+      }
 
       hideLoading();
       showSuccess(msg);

@@ -7,68 +7,39 @@ class PasswordResetController extends BaseController {
   final PasswordResetRepo repo;
   PasswordResetController({required this.repo});
 
-  // إدارة شاشات الـ PageView
+  // إدارة شاشات الـ PageView (الآن شاشتان فقط: 0 و 1)
   final pageController = PageController();
   final currentPage = 0.obs;
 
   // Controllers للحقول
   final phoneController = TextEditingController();
-  final otpController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmPasswordController = TextEditingController();
 
   final isPasswordHidden = true.obs;
   final isConfirmHidden = true.obs;
 
-  // ─── 1. إرسال الـ OTP ───
-  Future<void> sendOtp() async {
+  // ─── 1. فحص رقم الهاتف والانتقال الفوري ───
+  void validatePhoneAndContinue() {
     final phone = phoneController.text.trim();
 
-    // Client-Side Validation لرقم الهاتف
+    // القيد البرمجي (Client-Side Validation) لرقم الهاتف
     if (phone.length != 12 || !phone.startsWith('963')) {
       handleError('Phone number must be exactly 12 digits and start with 963'.tr);
       return;
     }
 
-    showLoading();
-    try {
-      final msg = await repo.sendOtp(phone);
-      showSuccess(msg);
-      _nextPage();
-    } catch (e) {
-      handleError(e);
-    } finally {
-      hideLoading();
-    }
+    // رقم الهاتف سليم؟ انقله فوراً لواجهة كلمة المرور الجديدة دون OTP
+    _nextPage();
   }
 
-  // ─── 2. التحقق من الـ OTP ───
-  Future<void> verifyOtp() async {
-    final otp = otpController.text.trim();
-
-    if (otp.length < 4) {
-      handleError('Please enter a valid 4-digit OTP'.tr);
-      return;
-    }
-
-    showLoading();
-    try {
-      final msg = await repo.verifyOtp(phoneController.text.trim(), otp);
-      showSuccess(msg);
-      _nextPage();
-    } catch (e) {
-      handleError(e);
-    } finally {
-      hideLoading();
-    }
-  }
-
-  // ─── 3. تعيين كلمة المرور الجديدة ───
+  // ─── 2. تعيين كلمة المرور الجديدة وإرسالها للسيرفر ───
   Future<void> setPassword() async {
     final pass = passwordController.text;
     final confirm = confirmPasswordController.text;
+    final phone = phoneController.text.trim();
 
-    // Client-Side Validation لكلمة المرور
+    // القيود البرمجية لكلمة المرور
     if (pass.length < 6) {
       handleError('Password must be at least 6 characters long'.tr);
       return;
@@ -80,10 +51,13 @@ class PasswordResetController extends BaseController {
 
     showLoading();
     try {
-      final msg = await repo.setPassword(phoneController.text.trim(), pass, confirm);
+      // 💡 بما أننا ألغينا واجهة الـ OTP، نرسل كلمة المرور مباشرة.
+      // ملحوظة هندسية: نمرر قيمة وهمية أو فارغة للـ OTP إذا كان الباك إند يتوقعه في السيرفر،
+      // ولكن هنا نمرر الـ phone والـ password بناءً على بنية الـ SetPasswordDoctor.
+      final msg = await repo.setPassword(phone, pass, confirm);
       showSuccess(msg);
 
-      // طرد المستخدم للوجن بعد ثانية للنجاح
+      // طرد المستخدم لواجهة تسجيل الدخول بعد ثانية من النجاح
       Future.delayed(const Duration(seconds: 1), () {
         Get.offAllNamed('/login');
       });
@@ -112,7 +86,6 @@ class PasswordResetController extends BaseController {
   void onClose() {
     pageController.dispose();
     phoneController.dispose();
-    otpController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
     super.onClose();

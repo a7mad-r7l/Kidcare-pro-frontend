@@ -75,4 +75,9 @@ class HomeRepo {
     final res = await api.completeAppointment(id);
     return jsonDecode(_cleanJson(res))['message'] ?? 'Success';
   }
+
+  Future<String> deleteDoctorAccount() async {
+    final res = await api.deleteDoctorAccount();
+    return jsonDecode(_cleanJson(res))['message'] ?? 'Account deleted successfully.';
+  }
 }

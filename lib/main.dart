@@ -1,6 +1,8 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/date_symbol_data_local.dart';
+
 
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
@@ -25,7 +27,7 @@ import 'core/apis/examination/examination_api.dart';
 import 'core/repos/examination/examination_repo.dart';
 
 // Revenue
-import 'views/revenue/revenue_view.dart';
+
 import 'controllers/revenue/revenue_controller.dart';
 import 'core/apis/revenue/revenue_api.dart';
 import 'core/repos/revenue/revenue_repo.dart';
@@ -55,6 +57,10 @@ import 'core/repos/settings/doctor_availability_repo.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+
+
+
   await initializeDateFormatting();
 
   final String savedToken = await SecureStorage.getToken();
@@ -64,7 +70,8 @@ void main() async {
   Locale initialLocale;
 
   if (savedLang == null || savedLang == 'system') {
-    Locale? deviceLocale = WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
+    Locale? deviceLocale =
+        WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
         ? WidgetsBinding.instance.platformDispatcher.locales.first
         : null;
     if (deviceLocale != null && deviceLocale.languageCode == 'ar') {
@@ -85,7 +92,11 @@ class MyApp extends StatelessWidget {
   final Locale initialLocale;
   final String initialRoute;
 
-  const MyApp({super.key, required this.initialLocale, required this.initialRoute});
+  const MyApp({
+    super.key,
+    required this.initialLocale,
+    required this.initialRoute,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +117,9 @@ class MyApp extends StatelessWidget {
           binding: BindingsBuilder(() {
             Get.lazyPut<LoginApi>(() => LoginApi());
             Get.lazyPut<LoginRepo>(() => LoginRepo(api: Get.find()));
-            Get.lazyPut<LoginController>(() => LoginController(repo: Get.find()));
+            Get.lazyPut<LoginController>(
+              () => LoginController(repo: Get.find()),
+            );
           }),
         ),
         GetPage(
@@ -114,8 +127,12 @@ class MyApp extends StatelessWidget {
           page: () => const AppointmentDetailsView(),
           binding: BindingsBuilder(() {
             Get.lazyPut<AppointmentDetailsApi>(() => AppointmentDetailsApi());
-            Get.lazyPut<AppointmentDetailsRepo>(() => AppointmentDetailsRepo(api: Get.find()));
-            Get.lazyPut<AppointmentDetailsController>(() => AppointmentDetailsController(repo: Get.find()));
+            Get.lazyPut<AppointmentDetailsRepo>(
+              () => AppointmentDetailsRepo(api: Get.find()),
+            );
+            Get.lazyPut<AppointmentDetailsController>(
+              () => AppointmentDetailsController(repo: Get.find()),
+            );
           }),
         ),
         // ─── مسار الهوم المدمج والخالي من الأخطاء ───
@@ -131,15 +148,21 @@ class MyApp extends StatelessWidget {
             // Schedule & Patients
             Get.lazyPut<ScheduleApi>(() => ScheduleApi());
             Get.lazyPut<ScheduleRepo>(() => ScheduleRepo(api: Get.find()));
-            Get.lazyPut<ScheduleController>(() => ScheduleController(repo: Get.find()));
+            Get.lazyPut<ScheduleController>(
+              () => ScheduleController(repo: Get.find()),
+            );
             Get.lazyPut<PatientsApi>(() => PatientsApi());
             Get.lazyPut<PatientsRepo>(() => PatientsRepo(api: Get.find()));
-            Get.lazyPut<PatientsController>(() => PatientsController(repo: Get.find()));
+            Get.lazyPut<PatientsController>(
+              () => PatientsController(repo: Get.find()),
+            );
 
             // Revenue (مهم جداً لحماية التبويب الثالث من الانهيار)
             Get.lazyPut<RevenueApi>(() => RevenueApi());
             Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
-            Get.lazyPut<RevenueController>(() => RevenueController(repo: Get.find()));
+            Get.lazyPut<RevenueController>(
+              () => RevenueController(repo: Get.find()),
+            );
 
             // Settings
             Get.lazyPut<SettingsController>(() => SettingsController());
@@ -150,8 +173,12 @@ class MyApp extends StatelessWidget {
           page: () => const DoctorAvailabilityView(),
           binding: BindingsBuilder(() {
             Get.lazyPut<DoctorAvailabilityApi>(() => DoctorAvailabilityApi());
-            Get.lazyPut<DoctorAvailabilityRepo>(() => DoctorAvailabilityRepo(api: Get.find()));
-            Get.lazyPut<DoctorAvailabilityController>(() => DoctorAvailabilityController(repo: Get.find()));
+            Get.lazyPut<DoctorAvailabilityRepo>(
+              () => DoctorAvailabilityRepo(api: Get.find()),
+            );
+            Get.lazyPut<DoctorAvailabilityController>(
+              () => DoctorAvailabilityController(repo: Get.find()),
+            );
           }),
         ),
         GetPage(
@@ -159,8 +186,12 @@ class MyApp extends StatelessWidget {
           page: () => const PasswordResetView(),
           binding: BindingsBuilder(() {
             Get.lazyPut<PasswordResetApi>(() => PasswordResetApi());
-            Get.lazyPut<PasswordResetRepo>(() => PasswordResetRepo(api: Get.find()));
-            Get.lazyPut<PasswordResetController>(() => PasswordResetController(repo: Get.find()));
+            Get.lazyPut<PasswordResetRepo>(
+              () => PasswordResetRepo(api: Get.find()),
+            );
+            Get.lazyPut<PasswordResetController>(
+              () => PasswordResetController(repo: Get.find()),
+            );
           }),
         ),
         GetPage(
@@ -168,8 +199,12 @@ class MyApp extends StatelessWidget {
           page: () => const ExaminationView(),
           binding: BindingsBuilder(() {
             Get.lazyPut<ExaminationApi>(() => ExaminationApi());
-            Get.lazyPut<ExaminationRepo>(() => ExaminationRepo(api: Get.find()));
-            Get.lazyPut<ExaminationController>(() => ExaminationController(repo: Get.find()));
+            Get.lazyPut<ExaminationRepo>(
+              () => ExaminationRepo(api: Get.find()),
+            );
+            Get.lazyPut<ExaminationController>(
+              () => ExaminationController(repo: Get.find()),
+            );
           }),
         ),
       ],

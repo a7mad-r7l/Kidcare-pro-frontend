@@ -75,68 +75,39 @@ class PasswordResetController extends BaseController {
   final PasswordResetRepo repo;
   PasswordResetController({required this.repo});
 
-  // إدارة شاشات الـ PageView
+  // إدارة شاشات الـ PageView (الآن شاشتان فقط: 0 و 1)
   final pageController = PageController();
   final currentPage = 0.obs;
 
   // Controllers للحقول
   final phoneController = TextEditingController();
-  final otpController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmPasswordController = TextEditingController();
 
   final isPasswordHidden = true.obs;
   final isConfirmHidden = true.obs;
 
-  // ─── 1. إرسال الـ OTP ───
-  Future<void> sendOtp() async {
+  // ─── 1. فحص رقم الهاتف والانتقال الفوري ───
+  void validatePhoneAndContinue() {
     final phone = phoneController.text.trim();
 
-    // Client-Side Validation لرقم الهاتف
+    // القيد البرمجي (Client-Side Validation) لرقم الهاتف
     if (phone.length != 12 || !phone.startsWith('963')) {
       handleError('Phone number must be exactly 12 digits and start with 963'.tr);
       return;
     }
 
-    showLoading();
-    try {
-      final msg = await repo.sendOtp(phone);
-      showSuccess(msg);
-      _nextPage();
-    } catch (e) {
-      handleError(e);
-    } finally {
-      hideLoading();
-    }
+    // رقم الهاتف سليم؟ انقله فوراً لواجهة كلمة المرور الجديدة دون OTP
+    _nextPage();
   }
 
-  // ─── 2. التحقق من الـ OTP ───
-  Future<void> verifyOtp() async {
-    final otp = otpController.text.trim();
-
-    if (otp.length < 4) {
-      handleError('Please enter a valid 4-digit OTP'.tr);
-      return;
-    }
-
-    showLoading();
-    try {
-      final msg = await repo.verifyOtp(phoneController.text.trim(), otp);
-      showSuccess(msg);
-      _nextPage();
-    } catch (e) {
-      handleError(e);
-    } finally {
-      hideLoading();
-    }
-  }
-
-  // ─── 3. تعيين كلمة المرور الجديدة ───
+  // ─── 2. تعيين كلمة المرور الجديدة وإرسالها للسيرفر ───
   Future<void> setPassword() async {
     final pass = passwordController.text;
     final confirm = confirmPasswordController.text;
+    final phone = phoneController.text.trim();
 
-    // Client-Side Validation لكلمة المرور
+    // القيود البرمجية لكلمة المرور
     if (pass.length < 6) {
       handleError('Password must be at least 6 characters long'.tr);
       return;
@@ -148,10 +119,13 @@ class PasswordResetController extends BaseController {
 
     showLoading();
     try {
-      final msg = await repo.setPassword(phoneController.text.trim(), pass, confirm);
+      // 💡 بما أننا ألغينا واجهة الـ OTP، نرسل كلمة المرور مباشرة.
+      // ملحوظة هندسية: نمرر قيمة وهمية أو فارغة للـ OTP إذا كان الباك إند يتوقعه في السيرفر،
+      // ولكن هنا نمرر الـ phone والـ password بناءً على بنية الـ SetPasswordDoctor.
+      final msg = await repo.setPassword(phone, pass, confirm);
       showSuccess(msg);
 
-      // طرد المستخدم للوجن بعد ثانية للنجاح
+      // طرد المستخدم لواجهة تسجيل الدخول بعد ثانية من النجاح
       Future.delayed(const Duration(seconds: 1), () {
         Get.offAllNamed('/login');
       });
@@ -180,7 +154,6 @@ class PasswordResetController extends BaseController {
   void onClose() {
     pageController.dispose();
     phoneController.dispose();
-    otpController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
     super.onClose();
@@ -287,6 +260,7 @@ import 'package:get/get.dart';
 import '../../core/repos/examination/examination_repo.dart';
 import '../../models/home/doctor_dashboard_model.dart';
 import '../base_controller.dart';
+import '../home/home_controller.dart';
 
 // حامل بسيط لحقول دواء واحد في الواجهة (إضافة دواء آخر تضيف نسخة جديدة)
 class MedicationFormData {
@@ -332,6 +306,7 @@ class LabRequestItem {
 
 class ExaminationController extends BaseController {
   final ExaminationRepo repo;
+
   ExaminationController({required this.repo});
 
   // 0 = التشخيص ، 1 = الوصفة
@@ -527,7 +502,13 @@ class ExaminationController extends BaseController {
         );
       }
 
-      final msg = await repo.completeAppointment(patient.value?.appointmentId ?? 0);
+      final msg = await repo.completeAppointment(
+        patient.value?.appointmentId ?? 0,
+      );
+
+      if (Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().fetchAllDashboardData();
+      }
 
       hideLoading();
       showSuccess(msg);
@@ -694,7 +675,6 @@ class HomeController extends BaseController {
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/repos/revenue/revenue_repo.dart';
-import '../../models/revenue/transaction_model.dart';
 import '../base_controller.dart';
 
 class RevenueController extends BaseController {
@@ -704,7 +684,6 @@ class RevenueController extends BaseController {
   final monthlyRevenue = 0.0.obs;
   final totalPaidVisits = 0.obs;
   final chartData = <double>[].obs;
-  final transactions = <TransactionModel>[].obs;
 
   @override
   void onInit() {
@@ -718,7 +697,6 @@ class RevenueController extends BaseController {
       _run(() async => monthlyRevenue.value = await repo.getMonthlyRevenue()),
       _run(() async => totalPaidVisits.value = await repo.getTotalPaidVisits()),
       _run(() async => chartData.assignAll(await repo.getRevenueChartData())),
-      _run(() async => transactions.assignAll(await repo.getTransactions())),
     ]);
     hideLoading();
   }
@@ -974,6 +952,7 @@ class DoctorAvailabilityController extends BaseController {
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/helper/secure_storage_service.dart';
+import '../../core/repos/home/home_repo.dart';
 import '../base_controller.dart';
 
 class SettingsController extends BaseController {
@@ -981,7 +960,25 @@ class SettingsController extends BaseController {
     Get.toNamed('/doctor_availability');
   }
 
-  // ─── منطق تغيير اللغة بالخيارات الثلاثة ───
+  void changePassword() {
+    Get.toNamed('/password_reset');
+  }
+
+  void changeTheme() {
+    if (Get.isDarkMode) {
+      Get.changeThemeMode(ThemeMode.light);
+    } else {
+      Get.changeThemeMode(ThemeMode.dark);
+    }
+  }
+
+  Future<void> logout() async {
+    showLoading();
+    await SecureStorage.removeAll();
+    hideLoading();
+    Get.offAllNamed('/login');
+  }
+
   void showLanguageDialog() {
     Get.bottomSheet(
       Container(
@@ -999,27 +996,26 @@ class SettingsController extends BaseController {
           children: [
             Text(
               'Language'.tr,
-              style: Get.theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              style: Get.theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 16),
-
-            // 1. خيار لغة النظام
             ListTile(
-              leading: Icon(Icons.brightness_auto_outlined, color: Get.theme.primaryColor),
+              leading: Icon(
+                Icons.brightness_auto_outlined,
+                color: Get.theme.primaryColor,
+              ),
               title: Text('System Language'.tr),
               onTap: () => _updateLanguage('system'),
             ),
             Divider(color: Get.theme.dividerColor.withOpacity(0.2), height: 1),
-
-            // 2. خيار اللغة العربية
             ListTile(
               leading: Icon(Icons.language, color: Get.theme.primaryColor),
               title: Text('Arabic'.tr),
               onTap: () => _updateLanguage('ar'),
             ),
             Divider(color: Get.theme.dividerColor.withOpacity(0.2), height: 1),
-
-            // 3. خيار اللغة الإنجليزية
             ListTile(
               leading: Icon(Icons.language, color: Get.theme.primaryColor),
               title: Text('English'.tr),
@@ -1033,36 +1029,72 @@ class SettingsController extends BaseController {
   }
 
   Future<void> _updateLanguage(String langCode) async {
-    // 1. حفظ الاختيار في التخزين الآمن
     await SecureStorage.storeLanguage(langCode);
-    Get.back(); // إغلاق الـ Bottom Sheet
-
+    Get.back();
     Locale targetLocale;
-
     if (langCode == 'system') {
-      // جلب لغة الجهاز الحالية
       Locale? deviceLocale = Get.deviceLocale;
-      if (deviceLocale != null && deviceLocale.languageCode == 'ar') {
-        targetLocale = const Locale('ar', 'SY');
-      } else {
-        targetLocale = const Locale('en', 'US');
-      }
+      targetLocale = (deviceLocale != null && deviceLocale.languageCode == 'ar')
+          ? const Locale('ar', 'SY')
+          : const Locale('en', 'US');
     } else if (langCode == 'ar') {
       targetLocale = const Locale('ar', 'SY');
     } else {
       targetLocale = const Locale('en', 'US');
     }
-
-    // 2. تحديث لغة التطبيق فوراً وبشكل حيّ
     Get.updateLocale(targetLocale);
   }
 
-  void changePassword() {
-    Get.toNamed('/password_reset');
+
+  void deleteAccount() {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: Get.theme.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Delete Account'.tr, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to permanently delete your account? This action cannot be undone.'.tr),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: Text('Cancel'.tr, style: TextStyle(color: Get.theme.hintColor)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              Get.back();
+              await _confirmDeleteAccount();
+            },
+            child: Text('Delete'.tr, style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
-  void changeTheme() {}
-  void deleteAccount() {}
+
+  Future<void> _confirmDeleteAccount() async {
+    showLoading();
+    try {
+
+      final homeRepo = Get.find<HomeRepo>();
+      final msg = await homeRepo.deleteDoctorAccount();
+
+      showSuccess(msg);
+
+
+      await SecureStorage.removeAll();
+      Get.offAllNamed('/login');
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
 }
+
 ```
 
 ### File: lib\core\apis\auth\login_api.dart
@@ -1317,18 +1349,46 @@ class HomeApi {
   Future<String> completeAppointment(int appointmentId) async {
     return (await http.get(Uri.parse('$baseUrl/api/doctors/$appointmentId/completeAppointment'), headers: await _getHeaders())).body;
   }
+  // DELETE ACCOUNT
+  Future<String> deleteDoctorAccount() async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/doctor/account/terminate'),
+      headers: await _getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+
+    return response.body;
+  }
 }
 ```
 
 ### File: lib\core\apis\revenue\revenue_api.dart
 ```dart
-// TODO: implement real HTTP calls when backend is ready.
-// All methods below are placeholders — the repo currently returns mock data directly.
+import 'package:http/http.dart' as http;
+
+import 'package:get/get.dart';
+import '../../constants.dart';
+import '../../helper/secure_storage_service.dart';
 
 class RevenueApi {
-  Future<String> getMonthlyRevenue() async => '';
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await SecureStorage.getToken();
+    final String currentLocale = Get.locale?.languageCode ?? 'en';
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Language': currentLocale,
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  /// GET /api/doctor/income → returns the current month's total earnings for the
+  /// logged-in doctor as `{ "monthly_income": <sum of doctor_earnings> }`.
+  Future<String> getMonthlyIncome() async {
+    return (await http.get(Uri.parse('$baseUrl/api/doctor/income'), headers: await _getHeaders())).body;
+  }
+
+  // TODO: implement when the backend exposes these endpoints.
   Future<String> getRevenueChartData() async => '';
-  Future<String> getTransactions() async => '';
   Future<String> getTotalPaidVisits() async => '';
 }
 
@@ -1474,11 +1534,10 @@ class DoctorAvailabilityApi {
 
 ### File: lib\core\constants.dart
 ```dart
-
-const String baseUrl = 'http://192.168.1.8:8000';
-
+const String baseUrl = 'http://192.168.1.6:8000';
 
 String token = '';
+
 ```
 
 ### File: lib\core\helper\secure_storage_service.dart
@@ -1545,7 +1604,7 @@ class AppTranslations extends Translations {
       // --- Login View ---
       'Doctor Login': 'Doctor Login',
       'Welcome back to Clinic Management System':
-      'Welcome back to Clinic Management System',
+          'Welcome back to Clinic Management System',
       'Mobile Number': 'Mobile Number',
       'Please enter mobile number': 'Please enter mobile number',
       'Invalid mobile number': 'Invalid mobile number',
@@ -1586,7 +1645,7 @@ class AppTranslations extends Translations {
       'Friday': 'Friday',
       'Saturday': 'Saturday',
       'Search for patient name or file number':
-      'Search for patient name or file number',
+          'Search for patient name or file number',
       'View Medical File': 'View Medical File',
       'Phone': 'Phone',
       'No patients found': 'No patients found',
@@ -1613,7 +1672,7 @@ class AppTranslations extends Translations {
       'Schedule': 'Schedule',
       'Settings': 'Settings',
       'No remaining patients for this date':
-      'No remaining patients for this date',
+          'No remaining patients for this date',
       'Patients': 'Patients',
 
       // --- Revenue View ---
@@ -1637,9 +1696,9 @@ class AppTranslations extends Translations {
       'Clinical Diagnosis': 'Clinical Diagnosis',
       'General Doctor Notes': 'General Doctor Notes',
       'Write the clinical diagnosis for the case':
-      'Write the clinical diagnosis for the case',
+          'Write the clinical diagnosis for the case',
       "Write any general notes about the child's condition":
-      "Write any general notes about the child's condition",
+          "Write any general notes about the child's condition",
       'Optional': 'Optional',
       'Height': 'Height',
       'Weight': 'Weight',
@@ -1663,15 +1722,15 @@ class AppTranslations extends Translations {
       'Diagnosis saved successfully': 'Diagnosis saved successfully',
       'Please enter the diagnosis': 'Please enter the diagnosis',
       'Please enter both height and weight':
-      'Please enter both height and weight',
+          'Please enter both height and weight',
       'Please save the diagnosis first': 'Please save the diagnosis first',
       'Please complete all medication fields':
-      'Please complete all medication fields',
+          'Please complete all medication fields',
 
       // --- Settings Section (New) ---
       'Working Settings': 'Working Settings',
       'Manage working hours and availability':
-      'Manage working hours and availability',
+          'Manage working hours and availability',
       'Change Password': 'Change Password',
       'Update your account password': 'Update your account password',
       'Language': 'Language',
@@ -1679,7 +1738,7 @@ class AppTranslations extends Translations {
       'Customize app language and view': 'Customize app language and view',
       'Delete Account': 'Delete Account',
       'Permanently delete your account from the app':
-      'Permanently delete your account from the app',
+          'Permanently delete your account from the app',
 
       // --- Availability View ---
       'Clinic Settings': 'Clinic Settings',
@@ -1688,7 +1747,7 @@ class AppTranslations extends Translations {
       'Start Time': 'Start Time',
       'End Time': 'End Time',
       'This day will be saved as your available working hours.':
-      'This day will be saved as your available working hours.',
+          'This day will be saved as your available working hours.',
       'Save Working Hours': 'Save Working Hours',
       'monday': 'Monday',
       'tuesday': 'Tuesday',
@@ -1705,24 +1764,28 @@ class AppTranslations extends Translations {
       'Yrs': 'Yrs',
       'Change Password?': 'Change Password?',
       'Enter your registered mobile number to reset your password.':
-      'Enter your registered mobile number to reset your password.',
+          'Enter your registered mobile number to reset your password.',
       'Phone number must be exactly 12 digits and start with 963':
-      'Phone number must be exactly 12 digits and start with 963',
+          'Phone number must be exactly 12 digits and start with 963',
       'Send OTP': 'Send OTP',
       'Verify OTP': 'Verify OTP',
       'A 4-digit code has been sent to your registered number.':
-      'A 4-digit code has been sent to your registered number.',
+          'A 4-digit code has been sent to your registered number.',
       'Please enter a valid 4-digit OTP': 'Please enter a valid 4-digit OTP',
       'Verify': 'Verify',
       'Create New Password': 'Create New Password',
       'Your new password must be different from previous ones.':
-      'Your new password must be different from previous ones.',
+          'Your new password must be different from previous ones.',
       'New Password': 'New Password',
       'Confirm Password': 'Confirm Password',
       'Password must be at least 6 characters long':
-      'Password must be at least 6 characters long',
+          'Password must be at least 6 characters long',
       'Passwords do not match': 'Passwords do not match',
       'Reset Password': 'Reset Password',
+      'Are you sure you want to permanently delete your account? This action cannot be undone.':
+          'Are you sure you want to permanently delete your account? This action cannot be undone.',
+      'Delete': 'Delete',
+      'Continue': 'Continue',
     },
 
     // القاموس العربي
@@ -1730,7 +1793,7 @@ class AppTranslations extends Translations {
       // --- Login View ---
       'Doctor Login': 'تسجيل دخول الطبيب',
       'Welcome back to Clinic Management System':
-      'مرحباً بك مجدداً في نظام إدارة العيادة',
+          'مرحباً بك مجدداً في نظام إدارة العيادة',
       'Mobile Number': 'رقم الموبايل',
       'Please enter mobile number': 'الرجاء إدخال رقم الموبايل',
       'Invalid mobile number': 'رقم الموبايل غير صالح',
@@ -1771,7 +1834,7 @@ class AppTranslations extends Translations {
       'Friday': 'الجمعة',
       'Saturday': 'السبت',
       'Search for patient name or file number':
-      'ابحث عن اسم الطفل أو رقم الملف',
+          'ابحث عن اسم الطفل أو رقم الملف',
       'View Medical File': 'عرض الملف الطبي',
       'Phone': 'الهاتف',
       'No patients found': 'لم يتم العثور على مرضى',
@@ -1821,9 +1884,9 @@ class AppTranslations extends Translations {
       'Clinical Diagnosis': 'التشخيص السريري',
       'General Doctor Notes': 'ملاحظات الطبيب العامة',
       'Write the clinical diagnosis for the case':
-      'اكتب التشخيص السريري للحالة',
+          'اكتب التشخيص السريري للحالة',
       "Write any general notes about the child's condition":
-      'اكتب أي ملاحظات عامة حول حالة الطفل',
+          'اكتب أي ملاحظات عامة حول حالة الطفل',
       'Optional': 'اختياري',
       'Height': 'الطول',
       'Weight': 'الوزن',
@@ -1860,7 +1923,7 @@ class AppTranslations extends Translations {
       'Customize app language and view': 'تخصيص لغة التطبيق والمظهر',
       'Delete Account': 'حذف الحساب',
       'Permanently delete your account from the app':
-      'حذف حسابك بشكل دائم من التطبيق',
+          'حذف حسابك بشكل دائم من التطبيق',
 
       // --- Availability View ---
       'Clinic Settings': 'إعدادات العيادة',
@@ -1869,7 +1932,7 @@ class AppTranslations extends Translations {
       'Start Time': 'وقت البداية',
       'End Time': 'وقت النهاية',
       'This day will be saved as your available working hours.':
-      'سيتم حفظ هذا اليوم باعتباره وقت دوامك المتاح.',
+          'سيتم حفظ هذا اليوم باعتباره وقت دوامك المتاح.',
       'Save Working Hours': 'حفظ وقت الدوام',
       'monday': 'الاثنين',
       'tuesday': 'الثلاثاء',
@@ -1886,24 +1949,28 @@ class AppTranslations extends Translations {
       'Yrs': 'سنوات',
       'Change Password?': 'تغيير كلمة المرور؟',
       'Enter your registered mobile number to reset your password.':
-      'أدخل رقم الموبايل المسجل لإعادة ضبط كلمة المرور الخاصة بك.',
+          'أدخل رقم الموبايل المسجل لإعادة ضبط كلمة المرور الخاصة بك.',
       'Phone number must be exactly 12 digits and start with 963':
-      'رقم الهاتف يجب أن يكون 12 رقماً ويبدأ بـ 963',
+          'رقم الهاتف يجب أن يكون 12 رقماً ويبدأ بـ 963',
       'Send OTP': 'إرسال الرمز',
       'Verify OTP': 'تأكيد الرمز',
       'A 4-digit code has been sent to your registered number.':
-      'تم إرسال رمز من 4 أرقام إلى رقمك المسجل.',
+          'تم إرسال رمز من 4 أرقام إلى رقمك المسجل.',
       'Please enter a valid 4-digit OTP': 'الرجاء إدخال رمز صحيح من 4 أرقام',
       'Verify': 'تأكيد',
       'Create New Password': 'إنشاء كلمة مرور جديدة',
       'Your new password must be different from previous ones.':
-      'يجب أن تكون كلمة المرور الجديدة مختلفة عن السابقة.',
+          'يجب أن تكون كلمة المرور الجديدة مختلفة عن السابقة.',
       'New Password': 'كلمة المرور الجديدة',
       'Confirm Password': 'تأكيد كلمة المرور',
       'Password must be at least 6 characters long':
-      'كلمة المرور يجب أن لا تقل عن 6 أحرف',
+          'كلمة المرور يجب أن لا تقل عن 6 أحرف',
       'Passwords do not match': 'كلمتا المرور غير متطابقتين',
       'Reset Password': 'إعادة ضبط كلمة المرور',
+      'Are you sure you want to permanently delete your account? This action cannot be undone.':
+          'هل أنت متأكد أنك تريد حذف حسابك نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.',
+      'Delete': 'حذف',
+      'Continue': 'متابعة',
     },
   };
 }
@@ -2147,24 +2214,46 @@ class HomeRepo {
     final res = await api.completeAppointment(id);
     return jsonDecode(_cleanJson(res))['message'] ?? 'Success';
   }
+
+  Future<String> deleteDoctorAccount() async {
+    final res = await api.deleteDoctorAccount();
+    return jsonDecode(_cleanJson(res))['message'] ?? 'Account deleted successfully.';
+  }
 }
 ```
 
 ### File: lib\core\repos\revenue\revenue_repo.dart
 ```dart
-import '../../../models/revenue/transaction_model.dart';
+import 'dart:convert';
 import '../../apis/revenue/revenue_api.dart';
 
 class RevenueRepo {
   final RevenueApi api;
   RevenueRepo({required this.api});
 
-  // ─── Mock data — swap these bodies for real API calls when backend is ready ──
+  String _cleanJson(String response) {
+    final brace = response.indexOf('{');
+    final bracket = response.indexOf('[');
+    if (bracket != -1 && (brace == -1 || bracket < brace)) {
+      return response.substring(bracket);
+    }
+    if (brace != -1) return response.substring(brace);
 
-  Future<double> getMonthlyRevenue() async {
-    // await api.getMonthlyRevenue();
-    return 15600;
+    final startIndex = response.indexOf(RegExp(r'[\{\[]'));
+    if (startIndex != -1) return response.substring(startIndex);
+
+    return response;
   }
+
+  /// Current month's total earnings for the logged-in doctor.
+  Future<double> getMonthlyRevenue() async {
+    final res = await api.getMonthlyIncome();
+    return double.tryParse(
+            jsonDecode(_cleanJson(res))['monthly_income']?.toString() ?? '0') ??
+        0.0;
+  }
+
+  // ─── Mock data — swap these bodies for real API calls when backend is ready ──
 
   Future<int> getTotalPaidVisits() async {
     // await api.getTotalPaidVisits();
@@ -2182,17 +2271,6 @@ class RevenueRepo {
       8400, 11800, 9200, 12600, 10100, 13400, 10800,
       14100, 11500, 14800, 12200, 13600, 12900, 14500,
       15600,
-    ];
-  }
-
-  Future<List<TransactionModel>> getTransactions() async {
-    // await api.getTransactions();
-    return [
-      TransactionModel(id: 1, patientName: 'آدم محمد',    date: '12 مايو 2024', amount: 150, paymentMethod: 'stripe'),
-      TransactionModel(id: 2, patientName: 'لينا خالد',   date: '12 مايو 2024', amount: 150, paymentMethod: 'stripe'),
-      TransactionModel(id: 3, patientName: 'يوسف عبدالله', date: '11 مايو 2024', amount: 150, paymentMethod: 'stripe'),
-      TransactionModel(id: 4, patientName: 'لينا محمد',   date: '11 مايو 2024', amount: 150, paymentMethod: 'stripe'),
-      TransactionModel(id: 5, patientName: 'سارة أحمد',   date: '10 مايو 2024', amount: 150, paymentMethod: 'stripe'),
     ];
   }
 }
@@ -2426,7 +2504,7 @@ import 'dart:io';
 void main() {
   var dir = Directory('lib');
 
-  var outputFile = File('my_project_code.md');
+  var outputFile = File('doctor_project_code.md');
   var output = StringBuffer();
 
   if (dir.existsSync()) {
@@ -2458,65 +2536,63 @@ void main() {
 ```dart
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:kidcare_pro/views/auth/password_reset_view.dart';
-import 'package:kidcare_pro/views/settings/doctor_availability_view.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
-
-import 'controllers/auth/password_reset_controller.dart';
-import 'controllers/settings/doctor_availability_controller.dart';
-import 'controllers/settings/settings_controller.dart';
-import 'core/apis/auth/password_reset_api.dart';
-import 'core/apis/settings/doctor_availability_api.dart';
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
-
-import 'core/repos/auth/password_reset_repo.dart';
-import 'core/repos/settings/doctor_availability_repo.dart';
 import 'core/theme/app_themes.dart';
 
-// Login paths
+// Login
 import 'views/auth/login_view.dart';
 import 'controllers/auth/login_controller.dart';
 import 'core/apis/auth/login_api.dart';
 import 'core/repos/auth/login_repo.dart';
 
-// Home paths
-import 'package:kidcare_pro/views/home/home_view.dart';
+// Home
+import 'views/home/home_view.dart';
 import 'controllers/home/home_controller.dart';
 import 'core/apis/home/home_api.dart';
 import 'core/repos/home/home_repo.dart';
 
-// Examination paths
+// Examination
 import 'views/examination/examination_view.dart';
 import 'controllers/examination/examination_controller.dart';
 import 'core/apis/examination/examination_api.dart';
 import 'core/repos/examination/examination_repo.dart';
 
-// Revenue paths
+// Revenue
 import 'views/revenue/revenue_view.dart';
 import 'controllers/revenue/revenue_controller.dart';
 import 'core/apis/revenue/revenue_api.dart';
 import 'core/repos/revenue/revenue_repo.dart';
 
-// Schedule paths
-import 'views/schedule/schedule_view.dart';
+// Schedule & Patients
 import 'controllers/schedule/schedule_controller.dart';
 import 'core/apis/schedule/schedule_api.dart';
 import 'core/repos/schedule/schedule_repo.dart';
-import 'package:intl/date_symbol_data_local.dart';
 import 'views/schedule/appointment_details_view.dart';
 import 'controllers/schedule/appointment_details_controller.dart';
 import 'core/apis/schedule/appointment_details_api.dart';
 import 'core/repos/schedule/appointment_details_repo.dart';
-import 'views/schedule/patients_view.dart';
 import 'controllers/schedule/patients_controller.dart';
 import 'core/apis/schedule/patients_api.dart';
 import 'core/repos/schedule/patients_repo.dart';
 
+// Settings & Auth
+import 'views/auth/password_reset_view.dart';
+import 'views/settings/doctor_availability_view.dart';
+import 'controllers/auth/password_reset_controller.dart';
+import 'controllers/settings/doctor_availability_controller.dart';
+import 'controllers/settings/settings_controller.dart';
+import 'core/apis/auth/password_reset_api.dart';
+import 'core/apis/settings/doctor_availability_api.dart';
+import 'core/repos/auth/password_reset_repo.dart';
+import 'core/repos/settings/doctor_availability_repo.dart';
+
 void main() async {
-  // لتهيئة فلاتر قبل تشغيل أي ميزة Native
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting();
+
   final String savedToken = await SecureStorage.getToken();
   final String initialRoute = savedToken.isNotEmpty ? '/doctor_home' : '/login';
 
@@ -2524,11 +2600,9 @@ void main() async {
   Locale initialLocale;
 
   if (savedLang == null || savedLang == 'system') {
-    Locale? deviceLocale =
-        WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
+    Locale? deviceLocale = WidgetsBinding.instance.platformDispatcher.locales.isNotEmpty
         ? WidgetsBinding.instance.platformDispatcher.locales.first
         : null;
-
     if (deviceLocale != null && deviceLocale.languageCode == 'ar') {
       initialLocale = const Locale('ar', 'SY');
     } else {
@@ -2547,11 +2621,7 @@ class MyApp extends StatelessWidget {
   final Locale initialLocale;
   final String initialRoute;
 
-  const MyApp({
-    super.key,
-    required this.initialLocale,
-    required this.initialRoute,
-  });
+  const MyApp({super.key, required this.initialLocale, required this.initialRoute});
 
   @override
   Widget build(BuildContext context) {
@@ -2559,16 +2629,12 @@ class MyApp extends StatelessWidget {
       theme: AppThemes.lightTheme,
       darkTheme: AppThemes.darkTheme,
       themeMode: ThemeMode.system,
-
       title: 'KidCare Pro',
       debugShowCheckedModeBanner: false,
-
       translations: AppTranslations(),
       locale: initialLocale,
       fallbackLocale: const Locale('en', 'US'),
-
       initialRoute: initialRoute,
-
       getPages: [
         GetPage(
           name: '/login',
@@ -2576,9 +2642,7 @@ class MyApp extends StatelessWidget {
           binding: BindingsBuilder(() {
             Get.lazyPut<LoginApi>(() => LoginApi());
             Get.lazyPut<LoginRepo>(() => LoginRepo(api: Get.find()));
-            Get.lazyPut<LoginController>(
-              () => LoginController(repo: Get.find()),
-            );
+            Get.lazyPut<LoginController>(() => LoginController(repo: Get.find()));
           }),
         ),
         GetPage(
@@ -2590,31 +2654,30 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<AppointmentDetailsController>(() => AppointmentDetailsController(repo: Get.find()));
           }),
         ),
+        // ─── مسار الهوم المدمج والخالي من الأخطاء ───
         GetPage(
           name: '/doctor_home',
           page: () => const HomeView(),
           binding: BindingsBuilder(() {
-            // Home Bindings
+            // Home
             Get.lazyPut<HomeApi>(() => HomeApi());
             Get.lazyPut<HomeRepo>(() => HomeRepo(api: Get.find()));
             Get.lazyPut<HomeController>(() => HomeController(repo: Get.find()));
 
-            // Schedule Bindings (تمت إضافتها هنا)
+            // Schedule & Patients
             Get.lazyPut<ScheduleApi>(() => ScheduleApi());
             Get.lazyPut<ScheduleRepo>(() => ScheduleRepo(api: Get.find()));
             Get.lazyPut<ScheduleController>(() => ScheduleController(repo: Get.find()));
             Get.lazyPut<PatientsApi>(() => PatientsApi());
             Get.lazyPut<PatientsRepo>(() => PatientsRepo(api: Get.find()));
             Get.lazyPut<PatientsController>(() => PatientsController(repo: Get.find()));
-          }),
-        ),
-        GetPage(
-          name: '/doctor_home',
-          page: () => const HomeView(),
-          binding: BindingsBuilder(() {
-            Get.lazyPut<HomeApi>(() => HomeApi());
-            Get.lazyPut<HomeRepo>(() => HomeRepo(api: Get.find()));
-            Get.lazyPut<HomeController>(() => HomeController(repo: Get.find()));
+
+            // Revenue (مهم جداً لحماية التبويب الثالث من الانهيار)
+            Get.lazyPut<RevenueApi>(() => RevenueApi());
+            Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
+            Get.lazyPut<RevenueController>(() => RevenueController(repo: Get.find()));
+
+            // Settings
             Get.lazyPut<SettingsController>(() => SettingsController());
           }),
         ),
@@ -2641,30 +2704,14 @@ class MyApp extends StatelessWidget {
           page: () => const ExaminationView(),
           binding: BindingsBuilder(() {
             Get.lazyPut<ExaminationApi>(() => ExaminationApi());
-            Get.lazyPut<ExaminationRepo>(
-              () => ExaminationRepo(api: Get.find()),
-            );
-            Get.lazyPut<ExaminationController>(
-              () => ExaminationController(repo: Get.find()),
-            );
-          }),
-        ),
-        GetPage(
-          name: '/revenue',
-          page: () => const RevenueView(),
-          binding: BindingsBuilder(() {
-            Get.lazyPut<RevenueApi>(() => RevenueApi());
-            Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
-            Get.lazyPut<RevenueController>(
-              () => RevenueController(repo: Get.find()),
-            );
+            Get.lazyPut<ExaminationRepo>(() => ExaminationRepo(api: Get.find()));
+            Get.lazyPut<ExaminationController>(() => ExaminationController(repo: Get.find()));
           }),
         ),
       ],
     );
   }
 }
-
 ```
 
 ### File: lib\models\auth\login_model.dart
@@ -3186,8 +3233,8 @@ class LoginView extends GetView<LoginController> {
                 const SizedBox(height: 50),
 
                 Image.asset(
-                  'assets/images/logo.png',
-                  height: 250,
+                  'assets/images/kidcare_pro_logo.png',
+                  height: 300,
                   fit: BoxFit.cover,
                 ),
 
@@ -3294,17 +3341,17 @@ class PasswordResetView extends GetView<PasswordResetController> {
       body: SafeArea(
         child: PageView(
           controller: controller.pageController,
-          physics: const NeverScrollableScrollPhysics(), // منع السحب اليدوي
+          physics: const NeverScrollableScrollPhysics(), // منع السحب اليدوي تماماً لإجبارية المسار
           children: [
-            _buildPhoneStep(context),
-            _buildOtpStep(context),
-            _buildNewPasswordStep(context),
+            _buildPhoneStep(context),        // الواجهة الأولى: رقم الهاتف
+            _buildNewPasswordStep(context),  // الواجهة الثانية: كلمة المرور الجديدة مباشرة
           ],
         ),
       ),
     );
   }
 
+  // ─── الواجهة الأولى: إدخال الموبايل ───
   Widget _buildPhoneStep(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24.0),
@@ -3323,9 +3370,9 @@ class PasswordResetView extends GetView<PasswordResetController> {
           ),
           const Spacer(),
           Obx(() => CustomButton(
-            text: 'Send OTP'.tr,
+            text: 'Continue'.tr, // تم تغيير النص إلى "متابعة" بما أنه لا يوجد إرسال OTP هنا
             isLoading: controller.isLoading,
-            onPressed: () => controller.sendOtp(),
+            onPressed: () => controller.validatePhoneAndContinue(), // استدعاء دالة التحقق والانتقال الفوري
           )),
           const SizedBox(height: 20),
         ],
@@ -3333,48 +3380,7 @@ class PasswordResetView extends GetView<PasswordResetController> {
     );
   }
 
-  Widget _buildOtpStep(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Verify OTP'.tr, style: context.theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold, color: context.theme.primaryColor)),
-          const SizedBox(height: 12),
-          Text('A 4-digit code has been sent to your registered number.'.tr, style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor, height: 1.5)),
-          const SizedBox(height: 40),
-          // تصميم OTP بسيط وآمن بدون مكاتب خارجية
-          Center(
-            child: SizedBox(
-              width: 200,
-              child: TextFormField(
-                controller: controller.otpController,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                textAlign: TextAlign.center,
-                style: context.theme.textTheme.headlineMedium?.copyWith(letterSpacing: 20, fontWeight: FontWeight.bold),
-                decoration: InputDecoration(
-                  counterText: '',
-                  filled: true,
-                  fillColor: context.theme.cardColor,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: context.theme.primaryColor, width: 2)),
-                ),
-              ),
-            ),
-          ),
-          const Spacer(),
-          Obx(() => CustomButton(
-            text: 'Verify'.tr,
-            isLoading: controller.isLoading,
-            onPressed: () => controller.verifyOtp(),
-          )),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
+  // ─── الواجهة الثانية: إدخال كلمة المرور وتأكيدها ───
   Widget _buildNewPasswordStep(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24.0),
@@ -3421,8 +3427,11 @@ class PasswordResetView extends GetView<PasswordResetController> {
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/examination/examination_controller.dart';
-import '../../core/constants.dart';
-import '../../widgets/custom_button.dart';
+import '../../widgets/examination/diagnosis_tab.dart';
+import '../../widgets/examination/examination_bottom_action.dart';
+import '../../widgets/examination/examination_tabs.dart';
+import '../../widgets/examination/patient_header.dart';
+import '../../widgets/examination/prescription_tab.dart';
 
 class ExaminationView extends GetView<ExaminationController> {
   const ExaminationView({super.key});
@@ -3438,861 +3447,27 @@ class ExaminationView extends GetView<ExaminationController> {
         elevation: 0,
         surfaceTintColor: context.theme.cardColor,
         title: Text('Patient Examination'.tr),
-        actions: [
-          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
-        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            _buildPatientHeader(context),
-            _buildTabs(context),
+            const PatientHeader(),
+            const ExaminationTabs(),
             Expanded(
               child: Obx(() {
                 switch (controller.selectedTab.value) {
                   case 1:
-                    return _buildPrescriptionTab(context);
+                    return const PrescriptionTab();
                   case 0:
                   default:
-                    return _buildDiagnosisTab(context);
+                    return const DiagnosisTab();
                 }
               }),
             ),
-            _buildBottomAction(context),
+            const ExaminationBottomAction(),
           ],
         ),
       ),
-    );
-  }
-
-  // ─── ترويسة المريض (الصورة / الاسم / العمر / المعرف / المؤقت) ───
-  Widget _buildPatientHeader(BuildContext context) {
-    return Obx(() {
-      final patient = controller.patient.value;
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 28,
-              backgroundColor: context.theme.primaryColor.withOpacity(0.12),
-              backgroundImage: patient != null && patient.image.isNotEmpty
-                  // الباك إند قد يرجع رابطاً كاملاً أو مساراً نسبياً
-                  ? NetworkImage(
-                      patient.image.startsWith('http')
-                          ? patient.image
-                          : '$baseUrl/${patient.image}',
-                    )
-                  : null,
-              child: patient == null || patient.image.isEmpty
-                  ? Icon(
-                      Icons.person,
-                      color: context.theme.primaryColor,
-                      size: 30,
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    patient?.name ?? 'Loading...',
-                    style: context.theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    patient != null
-                        ? '${patient.age} Yrs • ${patient.gender.tr}'
-                        : '',
-                    style: context.theme.textTheme.bodyMedium?.copyWith(
-                      color: context.theme.hintColor,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    controller.formattedPatientId,
-                    style: context.theme.textTheme.bodySmall?.copyWith(
-                      color: context.theme.hintColor,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Row(
-              children: [
-                Text(
-                  controller.formattedTime,
-                  style: context.theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  width: 9,
-                  height: 9,
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    });
-  }
-
-  // ─── شريط التبويبات (التشخيص / الوصفة) ───
-  Widget _buildTabs(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: context.theme.cardColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: context.theme.dividerColor),
-      ),
-      child: Obx(
-        () => Row(
-          children: [
-            _buildTabItem(context, 1, 'Prescription'.tr),
-            _buildTabItem(context, 0, 'Diagnosis'.tr),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabItem(BuildContext context, int index, String label) {
-    final isSelected = controller.selectedTab.value == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => controller.selectedTab.value = index,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? context.theme.primaryColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: isSelected ? Colors.white : context.theme.hintColor,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              fontSize: 13,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ─── تبويب التشخيص (التشخيص السريري / الملاحظات / بطاقة القياسات) ───
-  Widget _buildDiagnosisTab(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildTitledCard(
-            context,
-            icon: Icons.edit_note,
-            title: 'Clinical Diagnosis'.tr,
-            child: _buildMultilineField(
-              context,
-              controller: controller.diagnosisController,
-              hintText: 'Write the clinical diagnosis for the case'.tr,
-              maxLines: 5,
-              maxLength: 500,
-              fillColor: context.theme.scaffoldBackgroundColor,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildTitledCard(
-            context,
-            icon: Icons.description_outlined,
-            title: 'General Doctor Notes'.tr,
-            child: _buildMultilineField(
-              context,
-              controller: controller.doctorNotesController,
-              hintText:
-                  "Write any general notes about the child's condition".tr,
-              maxLines: 4,
-              maxLength: 300,
-              fillColor: context.theme.scaffoldBackgroundColor,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildMeasurementsCard(context),
-        ],
-      ),
-    );
-  }
-
-  // بطاقة القياسات القابلة للطي (اختيارية) — الطول والوزن معاً
-  Widget _buildMeasurementsCard(BuildContext context) {
-    return Obx(() {
-      final expanded = controller.measurementsExpanded.value;
-      return Container(
-        decoration: BoxDecoration(
-          color: context.theme.cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: context.theme.dividerColor),
-        ),
-        child: Column(
-          children: [
-            // رأس البطاقة القابل للنقر لفتح/طي الحقول
-            InkWell(
-              onTap: () => controller.measurementsExpanded.toggle(),
-              borderRadius: BorderRadius.circular(16),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.straighten,
-                      size: 20,
-                      color: context.theme.primaryColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '${'Measurements'.tr} (${'Optional'.tr})',
-                        style: context.theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      color: context.theme.hintColor,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (expanded)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildLabeledField(
-                        context,
-                        controller: controller.heightController,
-                        label: 'Height'.tr,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildLabeledField(
-                        context,
-                        controller: controller.weightController,
-                        label: 'Weight'.tr,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      );
-    });
-  }
-
-  // ─── تبويب الوصفة (بطاقة الأدوية + بطاقة التحاليل والأشعة) ───
-  Widget _buildPrescriptionTab(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildMedicationsCard(context),
-          const SizedBox(height: 16),
-          _buildLabSection(context),
-        ],
-      ),
-    );
-  }
-
-  // بطاقة وصفة الأدوية — العنوان مع رابط "إضافة دواء" وزر "إضافة دواء آخر" بالأسفل داخلها
-  Widget _buildMedicationsCard(BuildContext context) {
-    return _buildTitledCard(
-      context,
-      icon: Icons.medication_outlined,
-      title: 'Medications Prescription'.tr,
-      trailing: _buildAddLink(
-        context,
-        'Add Medication'.tr,
-        () => controller.addMedicationField(),
-      ),
-      child: Obx(
-        () => Column(
-          children: [
-            for (int i = 0; i < controller.medications.length; i++) ...[
-              if (i > 0) ...[
-                const SizedBox(height: 8),
-                Divider(height: 1, color: context.theme.dividerColor),
-                const SizedBox(height: 8),
-              ],
-              _buildMedicationEntry(context, i),
-            ],
-            const SizedBox(height: 12),
-            _buildAddAnotherButton(context),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMedicationEntry(BuildContext context, int index) {
-    final med = controller.medications[index];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // زر الحذف (X) يظهر فقط عند وجود أكثر من دواء
-        if (controller.medications.length > 1)
-          Align(
-            alignment: AlignmentDirectional.topStart,
-            child: GestureDetector(
-              onTap: () => controller.removeMedicationField(index),
-              child: const Icon(Icons.close, color: Colors.red, size: 20),
-            ),
-          ),
-        _buildLabeledField(
-          context,
-          controller: med.nameController,
-          label: 'Medicine Name'.tr,
-        ),
-        const SizedBox(height: 12),
-        // الجرعة والتعليمات كلٌّ في حقل مستقل
-        _buildLabeledField(
-          context,
-          controller: med.dosageController,
-          label: 'Dosage'.tr,
-        ),
-        const SizedBox(height: 12),
-        _buildLabeledField(
-          context,
-          controller: med.timingController,
-          label: 'Instructions'.tr,
-        ),
-        const SizedBox(height: 12),
-        // الكمية والمدة جنباً إلى جنب
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _buildLabeledField(
-                context,
-                controller: med.frequencyController,
-                label: 'Quantity'.tr,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildLabeledField(
-                context,
-                controller: med.durationController,
-                label: 'Duration'.tr,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // زر "إضافة دواء آخر" الممتد أسفل بطاقة الأدوية
-  Widget _buildAddAnotherButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => controller.addMedicationField(),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: context.theme.primaryColor.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add, size: 18, color: context.theme.primaryColor),
-            const SizedBox(width: 6),
-            Text(
-              'Add Another Medication'.tr,
-              style: TextStyle(
-                color: context.theme.primaryColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // بطاقة طلب التحاليل وصور الأشعة — يضيف الطبيب طلبات عبر زر ثم تظهر كصفوف
-  Widget _buildLabSection(BuildContext context) {
-    return _buildTitledCard(
-      context,
-      icon: Icons.science_outlined,
-      title: 'Lab & Imaging Requests'.tr,
-      trailing: _buildAddLink(
-        context,
-        'Add Request'.tr,
-        () => _showAddLabRequestSheet(context),
-      ),
-      child: Obx(() {
-        if (controller.labRequests.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              'No requests added'.tr,
-              style: context.theme.textTheme.bodySmall?.copyWith(
-                color: context.theme.hintColor,
-              ),
-            ),
-          );
-        }
-        return Column(
-          children: [
-            for (int i = 0; i < controller.labRequests.length; i++)
-              _buildLabRequestRow(context, i),
-          ],
-        );
-      }),
-    );
-  }
-
-  // صف طلب واحد: أيقونة النوع + القيمة + زر الحذف
-  Widget _buildLabRequestRow(BuildContext context, int index) {
-    final item = controller.labRequests[index];
-    final isTest = item.type == LabRequestType.test;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: context.theme.scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.theme.dividerColor),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isTest ? Icons.biotech_outlined : Icons.image_outlined,
-            size: 20,
-            color: context.theme.primaryColor,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              item.value,
-              style: context.theme.textTheme.bodyMedium?.copyWith(
-                color: context.theme.textTheme.bodyLarge?.color,
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => controller.removeLabRequest(index),
-            child: const Icon(Icons.close, color: Colors.red, size: 20),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // اختيار النوع (تحليل/أشعة) ثم إدخال القيمة عبر نافذة حوارية
-  void _showAddLabRequestSheet(BuildContext context) {
-    Get.dialog(
-      _AddLabRequestDialog(
-        onAdd: (type, value) => controller.addLabRequest(type, value),
-      ),
-    );
-  }
-
-  // ─── زر الإجراء السفلي يتغير حسب التبويب الحالي ───
-  Widget _buildBottomAction(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: Obx(() {
-        final isPrescription = controller.selectedTab.value == 1;
-        if (isPrescription) {
-          // زر أخضر مدمج (إنهاء المعاينة) — لتفادي تعديل الزر المشترك CustomButton
-          return SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade600,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-              ),
-              onPressed: controller.isLoading
-                  ? null
-                  : () => controller.saveAndFinish(),
-              child: controller.isLoading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.check, color: Colors.white, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Save & Finish Examination'.tr,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-          );
-        }
-        return CustomButton(
-          text: 'Save & Continue'.tr,
-          isLoading: controller.isLoading,
-          onPressed: () => controller.saveAndContinue(),
-        );
-      }),
-    );
-  }
-
-  Widget _buildSectionTitle(BuildContext context, String title) {
-    return Text(
-      title,
-      style: context.theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.bold,
-        fontSize: 15,
-      ),
-    );
-  }
-
-  // بطاقة بعنوان وأيقونة (مع إجراء اختياري بجانب العنوان) تحتوي على محتواها
-  Widget _buildTitledCard(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    Widget? trailing,
-    required Widget child,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.theme.dividerColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: context.theme.primaryColor),
-              const SizedBox(width: 8),
-              Expanded(child: _buildSectionTitle(context, title)),
-              ?trailing,
-            ],
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
-      ),
-    );
-  }
-
-  // رابط إجراء صغير (+ نص) يُوضع بجانب عنوان البطاقة
-  Widget _buildAddLink(BuildContext context, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.add, size: 16, color: context.theme.primaryColor),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: context.theme.primaryColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // حقل بعنوان صغير فوقه — مصمم ليطابق CustomTextField دون تعديله (بلا أيقونة)
-  Widget _buildLabeledField(
-    BuildContext context, {
-    required TextEditingController controller,
-    required String label,
-    TextInputType? keyboardType,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: context.theme.textTheme.bodySmall?.copyWith(
-            color: context.theme.hintColor,
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: controller,
-          keyboardType: keyboardType,
-          style: TextStyle(color: context.theme.textTheme.bodyLarge?.color),
-          decoration: InputDecoration(
-            isDense: true,
-            filled: true,
-            fillColor: context.theme.cardColor,
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 14,
-              horizontal: 16,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: context.theme.dividerColor),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: context.theme.primaryColor,
-                width: 1.5,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // حقل نصي متعدد الأسطر مع عدّاد — مصمم ليطابق CustomTextField دون تعديله
-  Widget _buildMultilineField(
-    BuildContext context, {
-    required TextEditingController controller,
-    required String hintText,
-    required int maxLines,
-    required int maxLength,
-    Color? fillColor,
-  }) {
-    return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
-      maxLength: maxLength,
-      style: TextStyle(color: context.theme.textTheme.bodyLarge?.color),
-      decoration: InputDecoration(
-        hintText: hintText,
-        hintStyle: TextStyle(color: context.theme.hintColor.withOpacity(0.6)),
-        filled: true,
-        fillColor: fillColor ?? context.theme.cardColor,
-        contentPadding: const EdgeInsets.symmetric(
-          vertical: 16,
-          horizontal: 20,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: context.theme.dividerColor),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: context.theme.primaryColor, width: 1.5),
-        ),
-      ),
-    );
-  }
-}
-
-class _AddLabRequestDialog extends StatefulWidget {
-  final void Function(LabRequestType, String) onAdd;
-
-  const _AddLabRequestDialog({required this.onAdd});
-
-  @override
-  State<_AddLabRequestDialog> createState() => _AddLabRequestDialogState();
-}
-
-class _AddLabRequestDialogState extends State<_AddLabRequestDialog> {
-  final _valueController = TextEditingController();
-  LabRequestType _selectedType = LabRequestType.test;
-
-  @override
-  void dispose() {
-    _valueController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: context.theme.cardColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Text('Add Request'.tr),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTypeChip(
-                    context,
-                    label: 'Test'.tr,
-                    icon: Icons.biotech_outlined,
-                    selected: _selectedType == LabRequestType.test,
-                    onTap: () => setState(() => _selectedType = LabRequestType.test),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildTypeChip(
-                    context,
-                    label: 'Imaging'.tr,
-                    icon: Icons.image_outlined,
-                    selected: _selectedType == LabRequestType.imaging,
-                    onTap: () => setState(() => _selectedType = LabRequestType.imaging),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildValueField(context),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Get.back(), child: Text('Cancel'.tr)),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: context.theme.primaryColor,
-            foregroundColor: Colors.white,
-          ),
-          onPressed: () {
-            final value = _valueController.text.trim();
-            if (value.isEmpty) return;
-            widget.onAdd(_selectedType, value);
-            Get.back();
-          },
-          child: Text('Add'.tr),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTypeChip(
-    BuildContext context, {
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    final color = selected ? context.theme.primaryColor : context.theme.hintColor;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? context.theme.primaryColor.withValues(alpha: 0.08) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildValueField(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Request Value'.tr,
-          style: context.theme.textTheme.bodySmall?.copyWith(
-            color: context.theme.hintColor,
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: _valueController,
-          autofocus: true,
-          style: TextStyle(color: context.theme.textTheme.bodyLarge?.color),
-          decoration: InputDecoration(
-            isDense: true,
-            filled: true,
-            fillColor: context.theme.cardColor,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: context.theme.dividerColor),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: context.theme.primaryColor, width: 1.5),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -4438,7 +3613,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/revenue/revenue_controller.dart';
-import '../../models/revenue/transaction_model.dart';
 
 class RevenueView extends GetView<RevenueController> {
   const RevenueView({super.key});
@@ -4451,11 +3625,7 @@ class RevenueView extends GetView<RevenueController> {
         backgroundColor: context.theme.colorScheme.surface,
         elevation: 0,
         centerTitle: true,
-        leading: IconButton(
-          icon: Icon(Icons.chevron_left,
-              color: context.theme.colorScheme.onSurface, size: 30),
-          onPressed: () => Get.back(),
-        ),
+        automaticallyImplyLeading: false,
         title: Text(
           'Wallet'.tr,
           style: TextStyle(
@@ -4464,11 +3634,6 @@ class RevenueView extends GetView<RevenueController> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          Icon(Icons.more_vert,
-              color: context.theme.colorScheme.onSurface, size: 24),
-          const SizedBox(width: 12),
-        ],
       ),
       body: Obx(() {
         if (controller.isLoading) {
@@ -4487,8 +3652,6 @@ class RevenueView extends GetView<RevenueController> {
                 _buildPaidVisitsCard(context),
                 const SizedBox(height: 16),
                 _buildChartCard(context),
-                const SizedBox(height: 16),
-                _buildTransactionsCard(context),
               ],
             ),
           ),
@@ -4724,124 +3887,6 @@ class RevenueView extends GetView<RevenueController> {
             }).toList(),
           );
         },
-      ),
-    );
-  }
-
-  // ─── White transactions card ──────────────────────────────────────────────
-
-  Widget _buildTransactionsCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Recent Transactions'.tr,
-            style: context.theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Obx(() {
-            if (controller.transactions.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text('No transactions yet'.tr,
-                      style: TextStyle(color: context.theme.hintColor)),
-                ),
-              );
-            }
-            return Column(
-              children: [
-                for (int i = 0; i < controller.transactions.length; i++) ...[
-                  _buildTransactionRow(context, controller.transactions[i]),
-                  if (i < controller.transactions.length - 1)
-                    Divider(
-                      height: 1,
-                      color: context.theme.dividerColor.withValues(alpha: 0.5),
-                    ),
-                ],
-              ],
-            );
-          }),
-          const SizedBox(height: 12),
-          Center(
-            child: GestureDetector(
-              onTap: () {},
-              child: Text(
-                'View All Transactions'.tr,
-                style: TextStyle(
-                  color: context.theme.primaryColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTransactionRow(BuildContext context, TransactionModel tx) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Payment method badge (left) — as in the design
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: context.theme.primaryColor.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              tx.paymentMethod,
-              style: TextStyle(
-                color: context.theme.primaryColor,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          // Patient name + date (middle)
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  tx.patientName,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  tx.date,
-                  style: TextStyle(color: context.theme.hintColor, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Amount (right)
-          Text(
-            '${_formatThousands(tx.amount)} ${'SAR'.tr}',
-            style: context.theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -6250,6 +5295,938 @@ class CustomTextField extends StatelessWidget {
 }
 ```
 
+### File: lib\widgets\examination\add_lab_request_dialog.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/examination/examination_controller.dart';
+
+// اختيار النوع (تحليل/أشعة) ثم إدخال القيمة عبر نافذة حوارية
+class AddLabRequestDialog extends StatefulWidget {
+  final void Function(LabRequestType, String) onAdd;
+
+  const AddLabRequestDialog({super.key, required this.onAdd});
+
+  @override
+  State<AddLabRequestDialog> createState() => _AddLabRequestDialogState();
+}
+
+class _AddLabRequestDialogState extends State<AddLabRequestDialog> {
+  final _valueController = TextEditingController();
+  LabRequestType _selectedType = LabRequestType.test;
+
+  @override
+  void dispose() {
+    _valueController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: context.theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text('Add Request'.tr),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _buildTypeChip(
+                    context,
+                    label: 'Test'.tr,
+                    icon: Icons.biotech_outlined,
+                    selected: _selectedType == LabRequestType.test,
+                    onTap: () => setState(() => _selectedType = LabRequestType.test),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildTypeChip(
+                    context,
+                    label: 'Imaging'.tr,
+                    icon: Icons.image_outlined,
+                    selected: _selectedType == LabRequestType.imaging,
+                    onTap: () => setState(() => _selectedType = LabRequestType.imaging),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildValueField(context),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Get.back(), child: Text('Cancel'.tr)),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: context.theme.primaryColor,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () {
+            final value = _valueController.text.trim();
+            if (value.isEmpty) return;
+            widget.onAdd(_selectedType, value);
+            Get.back();
+          },
+          child: Text('Add'.tr),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTypeChip(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final color = selected ? context.theme.primaryColor : context.theme.hintColor;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? context.theme.primaryColor.withValues(alpha: 0.08) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildValueField(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Request Value'.tr,
+          style: context.theme.textTheme.bodySmall?.copyWith(
+            color: context.theme.hintColor,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: _valueController,
+          autofocus: true,
+          style: TextStyle(color: context.theme.textTheme.bodyLarge?.color),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: context.theme.cardColor,
+            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: context.theme.dividerColor),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: context.theme.primaryColor, width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\examination\diagnosis_tab.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/examination/examination_controller.dart';
+import 'examination_fields.dart';
+
+// ─── تبويب التشخيص (التشخيص السريري / الملاحظات / بطاقة القياسات) ───
+class DiagnosisTab extends GetView<ExaminationController> {
+  const DiagnosisTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          buildTitledCard(
+            context,
+            icon: Icons.edit_note,
+            title: 'Clinical Diagnosis'.tr,
+            child: buildMultilineField(
+              context,
+              controller: controller.diagnosisController,
+              hintText: 'Write the clinical diagnosis for the case'.tr,
+              maxLines: 5,
+              maxLength: 500,
+              fillColor: context.theme.scaffoldBackgroundColor,
+            ),
+          ),
+          const SizedBox(height: 16),
+          buildTitledCard(
+            context,
+            icon: Icons.description_outlined,
+            title: 'General Doctor Notes'.tr,
+            child: buildMultilineField(
+              context,
+              controller: controller.doctorNotesController,
+              hintText:
+                  "Write any general notes about the child's condition".tr,
+              maxLines: 4,
+              maxLength: 300,
+              fillColor: context.theme.scaffoldBackgroundColor,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildMeasurementsCard(context),
+        ],
+      ),
+    );
+  }
+
+  // بطاقة القياسات القابلة للطي (اختيارية) — الطول والوزن معاً
+  Widget _buildMeasurementsCard(BuildContext context) {
+    return Obx(() {
+      final expanded = controller.measurementsExpanded.value;
+      return Container(
+        decoration: BoxDecoration(
+          color: context.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: context.theme.dividerColor),
+        ),
+        child: Column(
+          children: [
+            // رأس البطاقة القابل للنقر لفتح/طي الحقول
+            InkWell(
+              onTap: () => controller.measurementsExpanded.toggle(),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.straighten,
+                      size: 20,
+                      color: context.theme.primaryColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '${'Measurements'.tr} (${'Optional'.tr})',
+                        style: context.theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      color: context.theme.hintColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (expanded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: buildLabeledField(
+                        context,
+                        controller: controller.heightController,
+                        label: 'Height'.tr,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: buildLabeledField(
+                        context,
+                        controller: controller.weightController,
+                        label: 'Weight'.tr,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+```
+
+### File: lib\widgets\examination\examination_bottom_action.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/examination/examination_controller.dart';
+import '../custom_button.dart';
+
+// ─── زر الإجراء السفلي يتغير حسب التبويب الحالي ───
+class ExaminationBottomAction extends GetView<ExaminationController> {
+  const ExaminationBottomAction({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Obx(() {
+        final isPrescription = controller.selectedTab.value == 1;
+        if (isPrescription) {
+          // زر أخضر مدمج (إنهاء المعاينة) — لتفادي تعديل الزر المشترك CustomButton
+          return SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade600,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
+              ),
+              onPressed: controller.isLoading
+                  ? null
+                  : () => controller.saveAndFinish(),
+              child: controller.isLoading
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.check, color: Colors.white, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Save & Finish Examination'.tr,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          );
+        }
+        return CustomButton(
+          text: 'Save & Continue'.tr,
+          isLoading: controller.isLoading,
+          onPressed: () => controller.saveAndContinue(),
+        );
+      }),
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\examination\examination_fields.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+
+// ─── عناصر واجهة مشتركة داخل شاشة المعاينة (بطاقات وحقول) ───
+// مُجمَّعة هنا لتفادي تكرارها عبر بطاقات المعاينة المستخرَجة.
+
+// عنوان قسم صغير
+Widget buildSectionTitle(BuildContext context, String title) {
+  return Text(
+    title,
+    style: context.theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.bold,
+      fontSize: 15,
+    ),
+  );
+}
+
+// بطاقة بعنوان وأيقونة (مع إجراء اختياري بجانب العنوان) تحتوي على محتواها
+Widget buildTitledCard(
+  BuildContext context, {
+  required IconData icon,
+  required String title,
+  Widget? trailing,
+  required Widget child,
+}) {
+  return Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Theme.of(context).cardColor,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Theme.of(context).dividerColor),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 18, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 8),
+            Expanded(child: buildSectionTitle(context, title)),
+            ?trailing,
+          ],
+        ),
+        const SizedBox(height: 12),
+        child,
+      ],
+    ),
+  );
+}
+
+// رابط إجراء صغير (+ نص) يُوضع بجانب عنوان البطاقة
+Widget buildAddLink(BuildContext context, String label, VoidCallback onTap) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.add, size: 16, color: Theme.of(context).primaryColor),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: Theme.of(context).primaryColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// حقل بعنوان صغير فوقه — مصمم ليطابق CustomTextField دون تعديله (بلا أيقونة)
+Widget buildLabeledField(
+  BuildContext context, {
+  required TextEditingController controller,
+  required String label,
+  TextInputType? keyboardType,
+}) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: context.theme.textTheme.bodySmall?.copyWith(
+          color: context.theme.hintColor,
+          fontSize: 12,
+        ),
+      ),
+      const SizedBox(height: 6),
+      TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        style: TextStyle(color: context.theme.textTheme.bodyLarge?.color),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: Theme.of(context).cardColor,
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 14,
+            horizontal: 16,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Theme.of(context).dividerColor),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: Theme.of(context).primaryColor,
+              width: 1.5,
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+// حقل نصي متعدد الأسطر مع عدّاد — مصمم ليطابق CustomTextField دون تعديله
+Widget buildMultilineField(
+  BuildContext context, {
+  required TextEditingController controller,
+  required String hintText,
+  required int maxLines,
+  required int maxLength,
+  Color? fillColor,
+}) {
+  return TextFormField(
+    controller: controller,
+    maxLines: maxLines,
+    maxLength: maxLength,
+    style: TextStyle(color: context.theme.textTheme.bodyLarge?.color),
+    decoration: InputDecoration(
+      hintText: hintText,
+      hintStyle: TextStyle(
+        color: context.theme.hintColor.withValues(alpha: 0.6),
+      ),
+      filled: true,
+      fillColor: fillColor ?? Theme.of(context).cardColor,
+      contentPadding: const EdgeInsets.symmetric(
+        vertical: 16,
+        horizontal: 20,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Theme.of(context).dividerColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: Theme.of(context).primaryColor,
+          width: 1.5,
+        ),
+      ),
+    ),
+  );
+}
+
+```
+
+### File: lib\widgets\examination\examination_tabs.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/examination/examination_controller.dart';
+
+// ─── شريط التبويبات (التشخيص / الوصفة) ───
+class ExaminationTabs extends GetView<ExaminationController> {
+  const ExaminationTabs({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Obx(
+        () => Row(
+          children: [
+            _buildTabItem(context, 1, 'Prescription'.tr),
+            _buildTabItem(context, 0, 'Diagnosis'.tr),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabItem(BuildContext context, int index, String label) {
+    final isSelected = controller.selectedTab.value == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => controller.selectedTab.value = index,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? context.theme.primaryColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isSelected ? Colors.white : context.theme.hintColor,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\examination\lab_requests_card.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/examination/examination_controller.dart';
+import 'add_lab_request_dialog.dart';
+import 'examination_fields.dart';
+
+// بطاقة طلب التحاليل وصور الأشعة — يضيف الطبيب طلبات عبر زر ثم تظهر كصفوف
+class LabRequestsCard extends GetView<ExaminationController> {
+  const LabRequestsCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return buildTitledCard(
+      context,
+      icon: Icons.science_outlined,
+      title: 'Lab & Imaging Requests'.tr,
+      trailing: buildAddLink(
+        context,
+        'Add Request'.tr,
+        () => _showAddLabRequestSheet(context),
+      ),
+      child: Obx(() {
+        if (controller.labRequests.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'No requests added'.tr,
+              style: context.theme.textTheme.bodySmall?.copyWith(
+                color: context.theme.hintColor,
+              ),
+            ),
+          );
+        }
+        return Column(
+          children: [
+            for (int i = 0; i < controller.labRequests.length; i++)
+              _buildLabRequestRow(context, i),
+          ],
+        );
+      }),
+    );
+  }
+
+  // صف طلب واحد: أيقونة النوع + القيمة + زر الحذف
+  Widget _buildLabRequestRow(BuildContext context, int index) {
+    final item = controller.labRequests[index];
+    final isTest = item.type == LabRequestType.test;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: context.theme.scaffoldBackgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isTest ? Icons.biotech_outlined : Icons.image_outlined,
+            size: 20,
+            color: context.theme.primaryColor,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              item.value,
+              style: context.theme.textTheme.bodyMedium?.copyWith(
+                color: context.theme.textTheme.bodyLarge?.color,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => controller.removeLabRequest(index),
+            child: const Icon(Icons.close, color: Colors.red, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddLabRequestSheet(BuildContext context) {
+    Get.dialog(
+      AddLabRequestDialog(
+        onAdd: (type, value) => controller.addLabRequest(type, value),
+      ),
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\examination\medications_card.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/examination/examination_controller.dart';
+import 'examination_fields.dart';
+
+// بطاقة وصفة الأدوية — العنوان مع رابط "إضافة دواء" وزر "إضافة دواء آخر" بالأسفل داخلها
+class MedicationsCard extends GetView<ExaminationController> {
+  const MedicationsCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return buildTitledCard(
+      context,
+      icon: Icons.medication_outlined,
+      title: 'Medications Prescription'.tr,
+      trailing: buildAddLink(
+        context,
+        'Add Medication'.tr,
+        () => controller.addMedicationField(),
+      ),
+      child: Obx(
+        () => Column(
+          children: [
+            for (int i = 0; i < controller.medications.length; i++) ...[
+              if (i > 0) ...[
+                const SizedBox(height: 8),
+                Divider(height: 1, color: context.theme.dividerColor),
+                const SizedBox(height: 8),
+              ],
+              _buildMedicationEntry(context, i),
+            ],
+            const SizedBox(height: 12),
+            _buildAddAnotherButton(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMedicationEntry(BuildContext context, int index) {
+    final med = controller.medications[index];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // زر الحذف (X) يظهر فقط عند وجود أكثر من دواء
+        if (controller.medications.length > 1)
+          Align(
+            alignment: AlignmentDirectional.topStart,
+            child: GestureDetector(
+              onTap: () => controller.removeMedicationField(index),
+              child: const Icon(Icons.close, color: Colors.red, size: 20),
+            ),
+          ),
+        buildLabeledField(
+          context,
+          controller: med.nameController,
+          label: 'Medicine Name'.tr,
+        ),
+        const SizedBox(height: 12),
+        // الجرعة والتعليمات كلٌّ في حقل مستقل
+        buildLabeledField(
+          context,
+          controller: med.dosageController,
+          label: 'Dosage'.tr,
+        ),
+        const SizedBox(height: 12),
+        buildLabeledField(
+          context,
+          controller: med.timingController,
+          label: 'Instructions'.tr,
+        ),
+        const SizedBox(height: 12),
+        // الكمية والمدة جنباً إلى جنب
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: buildLabeledField(
+                context,
+                controller: med.frequencyController,
+                label: 'Quantity'.tr,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: buildLabeledField(
+                context,
+                controller: med.durationController,
+                label: 'Duration'.tr,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // زر "إضافة دواء آخر" الممتد أسفل بطاقة الأدوية
+  Widget _buildAddAnotherButton(BuildContext context) {
+    return GestureDetector(
+      onTap: () => controller.addMedicationField(),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: context.theme.primaryColor.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add, size: 18, color: context.theme.primaryColor),
+            const SizedBox(width: 6),
+            Text(
+              'Add Another Medication'.tr,
+              style: TextStyle(
+                color: context.theme.primaryColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\examination\patient_header.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/examination/examination_controller.dart';
+import '../../core/constants.dart';
+
+// ─── ترويسة المريض (الصورة / الاسم / العمر / المعرف) ───
+class PatientHeader extends GetView<ExaminationController> {
+  const PatientHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final patient = controller.patient.value;
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: context.theme.primaryColor.withOpacity(0.12),
+              backgroundImage: patient != null && patient.image.isNotEmpty
+                  // الباك إند قد يرجع رابطاً كاملاً أو مساراً نسبياً
+                  ? NetworkImage(
+                      patient.image.startsWith('http')
+                          ? patient.image
+                          : '$baseUrl/${patient.image}',
+                    )
+                  : null,
+              child: patient == null || patient.image.isEmpty
+                  ? Icon(
+                      Icons.person,
+                      color: context.theme.primaryColor,
+                      size: 30,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    patient?.name ?? 'Loading...',
+                    style: context.theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    patient != null
+                        ? '${patient.age} Yrs • ${patient.gender.tr}'
+                        : '',
+                    style: context.theme.textTheme.bodyMedium?.copyWith(
+                      color: context.theme.hintColor,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    controller.formattedPatientId,
+                    style: context.theme.textTheme.bodySmall?.copyWith(
+                      color: context.theme.hintColor,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+```
+
+### File: lib\widgets\examination\prescription_tab.dart
+```dart
+import 'package:flutter/material.dart';
+import 'lab_requests_card.dart';
+import 'medications_card.dart';
+
+// ─── تبويب الوصفة (بطاقة الأدوية + بطاقة التحاليل والأشعة) ───
+class PrescriptionTab extends StatelessWidget {
+  const PrescriptionTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const SingleChildScrollView(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MedicationsCard(),
+          SizedBox(height: 16),
+          LabRequestsCard(),
+        ],
+      ),
+    );
+  }
+}
+
+```
+
 ### File: lib\widgets\home\floating_bottom_bar.dart
 ```dart
 import 'package:flutter/material.dart';
@@ -6477,7 +6454,8 @@ class NextPatientCard extends GetView<HomeController> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () => controller.completePatientAppointment(patient.id),
+                // ─── الإصلاح هنا: توجيه الطبيب لشاشة المعاينة بدلاً من إنهاء الموعد ───
+                onPressed: () => Get.toNamed('/examination', arguments: patient),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

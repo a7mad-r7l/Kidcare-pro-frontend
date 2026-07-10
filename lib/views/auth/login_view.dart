@@ -22,8 +22,8 @@ class LoginView extends GetView<LoginController> {
                 const SizedBox(height: 50),
 
                 Image.asset(
-                  'assets/images/logo.png',
-                  height: 250,
+                  'assets/images/kidcare_pro_logo.png',
+                  height: 300,
                   fit: BoxFit.cover,
                 ),
 

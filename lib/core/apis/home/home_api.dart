@@ -48,4 +48,13 @@ class HomeApi {
   Future<String> completeAppointment(int appointmentId) async {
     return (await http.get(Uri.parse('$baseUrl/api/doctors/$appointmentId/completeAppointment'), headers: await _getHeaders())).body;
   }
+  // DELETE ACCOUNT
+  Future<String> deleteDoctorAccount() async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/doctor/account/terminate'),
+      headers: await _getHeaders(),
+    ).timeout(const Duration(seconds: 15));
+
+    return response.body;
+  }
 }

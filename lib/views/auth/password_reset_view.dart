@@ -22,17 +22,17 @@ class PasswordResetView extends GetView<PasswordResetController> {
       body: SafeArea(
         child: PageView(
           controller: controller.pageController,
-          physics: const NeverScrollableScrollPhysics(), // منع السحب اليدوي
+          physics: const NeverScrollableScrollPhysics(), // منع السحب اليدوي تماماً لإجبارية المسار
           children: [
-            _buildPhoneStep(context),
-            _buildOtpStep(context),
-            _buildNewPasswordStep(context),
+            _buildPhoneStep(context),        // الواجهة الأولى: رقم الهاتف
+            _buildNewPasswordStep(context),  // الواجهة الثانية: كلمة المرور الجديدة مباشرة
           ],
         ),
       ),
     );
   }
 
+  // ─── الواجهة الأولى: إدخال الموبايل ───
   Widget _buildPhoneStep(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24.0),
@@ -51,9 +51,9 @@ class PasswordResetView extends GetView<PasswordResetController> {
           ),
           const Spacer(),
           Obx(() => CustomButton(
-            text: 'Send OTP'.tr,
+            text: 'Continue'.tr, // تم تغيير النص إلى "متابعة" بما أنه لا يوجد إرسال OTP هنا
             isLoading: controller.isLoading,
-            onPressed: () => controller.sendOtp(),
+            onPressed: () => controller.validatePhoneAndContinue(), // استدعاء دالة التحقق والانتقال الفوري
           )),
           const SizedBox(height: 20),
         ],
@@ -61,48 +61,7 @@ class PasswordResetView extends GetView<PasswordResetController> {
     );
   }
 
-  Widget _buildOtpStep(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Verify OTP'.tr, style: context.theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold, color: context.theme.primaryColor)),
-          const SizedBox(height: 12),
-          Text('A 4-digit code has been sent to your registered number.'.tr, style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor, height: 1.5)),
-          const SizedBox(height: 40),
-          // تصميم OTP بسيط وآمن بدون مكاتب خارجية
-          Center(
-            child: SizedBox(
-              width: 200,
-              child: TextFormField(
-                controller: controller.otpController,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                textAlign: TextAlign.center,
-                style: context.theme.textTheme.headlineMedium?.copyWith(letterSpacing: 20, fontWeight: FontWeight.bold),
-                decoration: InputDecoration(
-                  counterText: '',
-                  filled: true,
-                  fillColor: context.theme.cardColor,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: context.theme.primaryColor, width: 2)),
-                ),
-              ),
-            ),
-          ),
-          const Spacer(),
-          Obx(() => CustomButton(
-            text: 'Verify'.tr,
-            isLoading: controller.isLoading,
-            onPressed: () => controller.verifyOtp(),
-          )),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
+  // ─── الواجهة الثانية: إدخال كلمة المرور وتأكيدها ───
   Widget _buildNewPasswordStep(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24.0),
