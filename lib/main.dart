@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:kidcare_pro/service/fcm_service.dart';
 
 
 import 'core/helper/secure_storage_service.dart';
@@ -55,13 +56,31 @@ import 'core/apis/settings/doctor_availability_api.dart';
 import 'core/repos/auth/password_reset_repo.dart';
 import 'core/repos/settings/doctor_availability_repo.dart';
 
-void main() async {
+//patients
+import 'views/patients/medical_file_view.dart';
+import 'controllers/patients/medical_file_controller.dart';
+import 'core/apis/patients/medical_file_api.dart';
+import 'core/repos/patients/medical_file_repo.dart';
+
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  print("STEP 1");
 
 
 
   await initializeDateFormatting();
+
+  print("STEP 2");
+
+  await Firebase.initializeApp();
+
+  print("STEP 3");
+
+  await FCMService.printFCMToken();
+
+  print("STEP 4");
 
   final String savedToken = await SecureStorage.getToken();
   final String initialRoute = savedToken.isNotEmpty ? '/doctor_home' : '/login';
@@ -120,6 +139,15 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<LoginController>(
               () => LoginController(repo: Get.find()),
             );
+          }),
+        ),
+        GetPage(
+          name: '/medical_file',
+          page: () => const MedicalFileView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<MedicalFileApi>(() => MedicalFileApi());
+            Get.lazyPut<MedicalFileRepo>(() => MedicalFileRepo(api: Get.find()));
+            Get.lazyPut<MedicalFileController>(() => MedicalFileController(repo: Get.find()));
           }),
         ),
         GetPage(
