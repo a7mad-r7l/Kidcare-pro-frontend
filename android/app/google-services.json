@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "935281198726",
+    "project_id": "kidcare-notifications-96234",
+    "storage_bucket": "kidcare-notifications-96234.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:935281198726:android:cdf217dace7626ba58f307",
+        "android_client_info": {
+          "package_name": "com.example.kidcare_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBtLLG2hKXmAol9VzopQ4ItAePTLJWb2CA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:935281198726:android:a99172fe564771b258f307",
+        "android_client_info": {
+          "package_name": "com.example.kidcare_pro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBtLLG2hKXmAol9VzopQ4ItAePTLJWb2CA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -164,7 +164,9 @@ class PatientsView extends GetView<PatientsController> {
             ),
           ),
           InkWell(
-            onTap: () {},
+            onTap: () {
+              Get.toNamed('/medical_file', arguments: patient.id);
+            },
             borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
             child: Container(
               width: double.infinity,

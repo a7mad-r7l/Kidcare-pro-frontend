@@ -75,7 +75,6 @@ class HomeController extends BaseController {
         repo.getNextPatient(),
         repo.getRemainingPatients(),
       ]);
-
       doctorData.value = results[0] as DoctorHomeModel;
       totalAppointments.value = results[1] as int;
       completedAppointments.value = results[2] as int;
