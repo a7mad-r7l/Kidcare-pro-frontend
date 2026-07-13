@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/revenue/revenue_controller.dart';
-import '../../models/revenue/transaction_model.dart';
 
 class RevenueView extends GetView<RevenueController> {
   const RevenueView({super.key});
@@ -15,11 +14,7 @@ class RevenueView extends GetView<RevenueController> {
         backgroundColor: context.theme.colorScheme.surface,
         elevation: 0,
         centerTitle: true,
-        leading: IconButton(
-          icon: Icon(Icons.chevron_left,
-              color: context.theme.colorScheme.onSurface, size: 30),
-          onPressed: () => Get.back(),
-        ),
+        automaticallyImplyLeading: false,
         title: Text(
           'Wallet'.tr,
           style: TextStyle(
@@ -28,11 +23,6 @@ class RevenueView extends GetView<RevenueController> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          Icon(Icons.more_vert,
-              color: context.theme.colorScheme.onSurface, size: 24),
-          const SizedBox(width: 12),
-        ],
       ),
       body: Obx(() {
         if (controller.isLoading) {
@@ -51,8 +41,6 @@ class RevenueView extends GetView<RevenueController> {
                 _buildPaidVisitsCard(context),
                 const SizedBox(height: 16),
                 _buildChartCard(context),
-                const SizedBox(height: 16),
-                _buildTransactionsCard(context),
               ],
             ),
           ),
@@ -288,124 +276,6 @@ class RevenueView extends GetView<RevenueController> {
             }).toList(),
           );
         },
-      ),
-    );
-  }
-
-  // ─── White transactions card ──────────────────────────────────────────────
-
-  Widget _buildTransactionsCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Recent Transactions'.tr,
-            style: context.theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Obx(() {
-            if (controller.transactions.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text('No transactions yet'.tr,
-                      style: TextStyle(color: context.theme.hintColor)),
-                ),
-              );
-            }
-            return Column(
-              children: [
-                for (int i = 0; i < controller.transactions.length; i++) ...[
-                  _buildTransactionRow(context, controller.transactions[i]),
-                  if (i < controller.transactions.length - 1)
-                    Divider(
-                      height: 1,
-                      color: context.theme.dividerColor.withValues(alpha: 0.5),
-                    ),
-                ],
-              ],
-            );
-          }),
-          const SizedBox(height: 12),
-          Center(
-            child: GestureDetector(
-              onTap: () {},
-              child: Text(
-                'View All Transactions'.tr,
-                style: TextStyle(
-                  color: context.theme.primaryColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTransactionRow(BuildContext context, TransactionModel tx) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Payment method badge (left) — as in the design
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: context.theme.primaryColor.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              tx.paymentMethod,
-              style: TextStyle(
-                color: context.theme.primaryColor,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          // Patient name + date (middle)
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  tx.patientName,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  tx.date,
-                  style: TextStyle(color: context.theme.hintColor, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Amount (right)
-          Text(
-            '${_formatThousands(tx.amount)} ${'SAR'.tr}',
-            style: context.theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-          ),
-        ],
       ),
     );
   }

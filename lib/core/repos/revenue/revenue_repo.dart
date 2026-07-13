@@ -1,16 +1,33 @@
-import '../../../models/revenue/transaction_model.dart';
+import 'dart:convert';
 import '../../apis/revenue/revenue_api.dart';
 
 class RevenueRepo {
   final RevenueApi api;
   RevenueRepo({required this.api});
 
-  // ─── Mock data — swap these bodies for real API calls when backend is ready ──
+  String _cleanJson(String response) {
+    final brace = response.indexOf('{');
+    final bracket = response.indexOf('[');
+    if (bracket != -1 && (brace == -1 || bracket < brace)) {
+      return response.substring(bracket);
+    }
+    if (brace != -1) return response.substring(brace);
 
-  Future<double> getMonthlyRevenue() async {
-    // await api.getMonthlyRevenue();
-    return 15600;
+    final startIndex = response.indexOf(RegExp(r'[\{\[]'));
+    if (startIndex != -1) return response.substring(startIndex);
+
+    return response;
   }
+
+  /// Current month's total earnings for the logged-in doctor.
+  Future<double> getMonthlyRevenue() async {
+    final res = await api.getMonthlyIncome();
+    return double.tryParse(
+            jsonDecode(_cleanJson(res))['monthly_income']?.toString() ?? '0') ??
+        0.0;
+  }
+
+  // ─── Mock data — swap these bodies for real API calls when backend is ready ──
 
   Future<int> getTotalPaidVisits() async {
     // await api.getTotalPaidVisits();
@@ -28,17 +45,6 @@ class RevenueRepo {
       8400, 11800, 9200, 12600, 10100, 13400, 10800,
       14100, 11500, 14800, 12200, 13600, 12900, 14500,
       15600,
-    ];
-  }
-
-  Future<List<TransactionModel>> getTransactions() async {
-    // await api.getTransactions();
-    return [
-      TransactionModel(id: 1, patientName: 'آدم محمد',    date: '12 مايو 2024', amount: 150, paymentMethod: 'stripe'),
-      TransactionModel(id: 2, patientName: 'لينا خالد',   date: '12 مايو 2024', amount: 150, paymentMethod: 'stripe'),
-      TransactionModel(id: 3, patientName: 'يوسف عبدالله', date: '11 مايو 2024', amount: 150, paymentMethod: 'stripe'),
-      TransactionModel(id: 4, patientName: 'لينا محمد',   date: '11 مايو 2024', amount: 150, paymentMethod: 'stripe'),
-      TransactionModel(id: 5, patientName: 'سارة أحمد',   date: '10 مايو 2024', amount: 150, paymentMethod: 'stripe'),
     ];
   }
 }

@@ -3,7 +3,7 @@ import 'dart:io';
 void main() {
   var dir = Directory('lib');
 
-  var outputFile = File('my_project_code.md');
+  var outputFile = File('doctor_project_code.md');
   var output = StringBuffer();
 
   if (dir.existsSync()) {
