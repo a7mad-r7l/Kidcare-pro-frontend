@@ -213,6 +213,10 @@ class AppTranslations extends Translations {
           'Are you sure you want to permanently delete your account? This action cannot be undone.',
       'Delete': 'Delete',
       'Continue': 'Continue',
+      'Are you sure you want to delete this working day?': 'Are you sure you want to delete this working day?',
+      'Deleted successfully': 'Deleted successfully',
+      'Cannot delete this availability': 'Cannot delete this availability',
+      'Server error': 'Server error',
     },
 
     // القاموس العربي
@@ -421,6 +425,10 @@ class AppTranslations extends Translations {
           'هل أنت متأكد أنك تريد حذف حسابك نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.',
       'Delete': 'حذف',
       'Continue': 'متابعة',
+      'Are you sure you want to delete this working day?': 'هل أنت متأكد من حذف وقت الدوام هذا؟',
+      'Deleted successfully': 'تم الحذف بنجاح',
+      'Cannot delete this availability': 'لا يمكن حذف وقت الدوام هذا',
+      'Server error': 'خطأ في الخادم',
     },
   };
 }

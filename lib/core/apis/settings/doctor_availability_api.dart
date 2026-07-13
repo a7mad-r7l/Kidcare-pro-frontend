@@ -5,8 +5,6 @@ import 'package:get/get.dart';
 import '../../constants.dart';
 import '../../helper/secure_storage_service.dart';
 
-
-
 class DoctorAvailabilityApi {
   Future<Map<String, String>> _getHeaders() async {
     final token = await SecureStorage.getToken();
@@ -19,7 +17,6 @@ class DoctorAvailabilityApi {
     };
   }
 
-  // إرسال البيانات كـ JSON مع الحقول المطلوبة في الباك إند
   Future<http.Response> addAvailability({
     required String dayOfWeek,
     required String startTime,
@@ -27,16 +24,38 @@ class DoctorAvailabilityApi {
   }) async {
     final url = Uri.parse('$baseUrl/api/doctor-availabilities');
 
-    final response = await http.post(
-      url,
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'day_of_week': dayOfWeek,
-        'start_time': startTime,
-        'end_time': endTime,
-      }),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .post(
+          url,
+          headers: await _getHeaders(),
+          body: jsonEncode({
+            'day_of_week': dayOfWeek,
+            'start_time': startTime,
+            'end_time': endTime,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
 
     return response;
+  }
+
+  // GET
+  Future<http.Response> getAvailabilities(int doctorId) async {
+    return await http
+        .get(
+          Uri.parse('$baseUrl/api/doctors/$doctorId/availabilities'),
+          headers: await _getHeaders(),
+        )
+        .timeout(const Duration(seconds: 15));
+  }
+
+  // DELETE
+  Future<http.Response> deleteAvailability(int id) async {
+    return await http
+        .delete(
+          Uri.parse('$baseUrl/api/doctor/availability/$id'),
+          headers: await _getHeaders(),
+        )
+        .timeout(const Duration(seconds: 15));
   }
 }

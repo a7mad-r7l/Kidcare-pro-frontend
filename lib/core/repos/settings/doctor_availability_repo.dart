@@ -1,12 +1,14 @@
 import 'dart:convert';
 
+import 'package:get/get.dart';
+
+import '../../../models/settings/availability_item_model.dart';
 import '../../../models/settings/doctor_availability_model.dart';
 import '../../apis/settings/doctor_availability_api.dart';
 
-
-
 class DoctorAvailabilityRepo {
   final DoctorAvailabilityApi api;
+
   DoctorAvailabilityRepo({required this.api});
 
   String _cleanJson(String response) {
@@ -30,9 +32,10 @@ class DoctorAvailabilityRepo {
     final cleanedBody = _cleanJson(response.body);
     final Map<String, dynamic> decodedJson = jsonDecode(cleanedBody);
 
-    // ─── التقاط خطأ التضارب 422 الموضح في البوست مان وتمريره للـ BaseController ───
     if (response.statusCode == 422 || response.statusCode == 400) {
-      throw Exception(decodedJson['message'] ?? 'Time conflict or invalid data.');
+      throw Exception(
+        decodedJson['message'] ?? 'Time conflict or invalid data.',
+      );
     }
 
     if (response.statusCode != 200 && response.statusCode != 201) {
@@ -40,5 +43,53 @@ class DoctorAvailabilityRepo {
     }
 
     return DoctorAvailabilityModel.fromJson(decodedJson);
+  }
+
+  Future<List<AvailabilityItemModel>> getAvailabilities(int doctorId) async {
+    final response = await api.getAvailabilities(doctorId);
+    final decodedJson = jsonDecode(_cleanJson(response.body));
+
+    if (response.statusCode == 200) {
+      final List data = decodedJson['data'] ?? [];
+      return data.map((e) => AvailabilityItemModel.fromJson(e)).toList();
+    } else {
+      throw Exception(
+        decodedJson['message'] ?? 'Failed to load availabilities',
+      );
+    }
+  }
+
+  Future<String> deleteAvailability(int id) async {
+    final response = await api.deleteAvailability(id);
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      if (response.body.isEmpty) return 'Deleted successfully'.tr;
+
+      try {
+        final decoded = jsonDecode(_cleanJson(response.body));
+        if (decoded is Map) {
+          return decoded['message']?.toString() ?? 'Deleted successfully'.tr;
+        }
+      } catch (_) {}
+      return 'Deleted successfully'.tr;
+    } else {
+      String errorMessage = '${'Server error'.tr}: ${response.statusCode}';
+
+      try {
+        final decoded = jsonDecode(_cleanJson(response.body));
+
+        if (decoded is Map && decoded['message'] != null) {
+          errorMessage = decoded['message'].toString();
+        } else if (decoded is Map && decoded['errors'] != null) {
+          errorMessage = decoded['errors'].values.first[0].toString();
+        }
+      } catch (_) {
+        if (response.statusCode == 422) {
+          errorMessage = 'Cannot delete this availability'.tr;
+        }
+      }
+
+      throw errorMessage;
+    }
   }
 }

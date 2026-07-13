@@ -4,7 +4,6 @@ import 'package:get/get.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:kidcare_pro/service/fcm_service.dart';
 
-
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
 import 'core/theme/app_themes.dart';
@@ -62,13 +61,10 @@ import 'controllers/patients/medical_file_controller.dart';
 import 'core/apis/patients/medical_file_api.dart';
 import 'core/repos/patients/medical_file_repo.dart';
 
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   print("STEP 1");
-
-
 
   await initializeDateFormatting();
 
@@ -146,8 +142,12 @@ class MyApp extends StatelessWidget {
           page: () => const MedicalFileView(),
           binding: BindingsBuilder(() {
             Get.lazyPut<MedicalFileApi>(() => MedicalFileApi());
-            Get.lazyPut<MedicalFileRepo>(() => MedicalFileRepo(api: Get.find()));
-            Get.lazyPut<MedicalFileController>(() => MedicalFileController(repo: Get.find()));
+            Get.lazyPut<MedicalFileRepo>(
+              () => MedicalFileRepo(api: Get.find()),
+            );
+            Get.lazyPut<MedicalFileController>(
+              () => MedicalFileController(repo: Get.find()),
+            );
           }),
         ),
         GetPage(
@@ -163,7 +163,7 @@ class MyApp extends StatelessWidget {
             );
           }),
         ),
-        // ─── مسار الهوم المدمج والخالي من الأخطاء ───
+
         GetPage(
           name: '/doctor_home',
           page: () => const HomeView(),
