@@ -83,7 +83,7 @@ class RevenueView extends GetView<RevenueController> {
                 ),
                 const SizedBox(height: 8),
                 Obx(() => Text(
-                      '${_formatThousands(controller.monthlyRevenue.value)} ${'SAR'.tr}',
+                      '${_formatThousands(controller.monthlyRevenue.value)} ${'USD'.tr}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 30,
@@ -97,11 +97,12 @@ class RevenueView extends GetView<RevenueController> {
           SizedBox(
             width: 90,
             height: 50,
-            child: Obx(() => controller.chartData.isEmpty
+            child: Obx(() => controller.yearlyIncome.isEmpty
                 ? const SizedBox.shrink()
                 : CustomPaint(
                     painter: _LineChartPainter(
-                      data: controller.chartData,
+                      data: controller.yearlyIncome.toList(),
+                      plotCount: _elapsedMonths(controller.yearlyIncome.length),
                       lineColor: Colors.white,
                       showDots: false,
                       showGrid: false,
@@ -157,7 +158,7 @@ class RevenueView extends GetView<RevenueController> {
           Padding(
             padding: const EdgeInsets.only(left: 8),
             child: Text(
-              'Revenue Overview'.tr,
+              'Yearly Income'.tr,
               style: context.theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
@@ -175,14 +176,20 @@ class RevenueView extends GetView<RevenueController> {
   }
 
   Widget _buildLineChart(BuildContext context) {
-    final data = controller.chartData;
+    final data = controller.yearlyIncome.toList();
     if (data.isEmpty) {
       return Center(
         child: Text('No data'.tr, style: TextStyle(color: context.theme.hintColor)),
       );
     }
 
-    final dataMax = data.reduce((a, b) => a > b ? a : b);
+    // The API always returns all 12 months, with the ones still ahead of us as
+    // 0. Plotting those would draw the year falling off a cliff, so the line
+    // stops at the current month while the axis keeps its full 12 slots.
+    final plotCount = _elapsedMonths(data.length);
+    final plotted = data.take(plotCount);
+    final dataMax = plotted.reduce((a, b) => a > b ? a : b);
+    final peakMonth = data.indexOf(dataMax);
     // Round the axis ceiling up to a "nice" value so labels read 5K / 10K / 15K / 20K.
     final axisMax = _niceCeil(dataMax);
     final step = axisMax / 4;
@@ -198,7 +205,7 @@ class RevenueView extends GetView<RevenueController> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                'SAR'.tr,
+                'USD'.tr,
                 style: TextStyle(fontSize: 8, color: context.theme.hintColor),
               ),
               ...List.generate(5, (i) {
@@ -222,12 +229,14 @@ class RevenueView extends GetView<RevenueController> {
                   size: Size.infinite,
                   painter: _LineChartPainter(
                     data: data,
+                    plotCount: plotCount,
                     lineColor: context.theme.primaryColor,
                     showDots: true,
                     showGrid: true,
                     fillOpacity: 0.08,
-                    tooltip: '${_formatThousands(dataMax)} ${'SAR'.tr}',
+                    tooltip: '${_formatThousands(dataMax)} ${'USD'.tr}',
                     tooltipBg: context.theme.primaryColor,
+                    tooltipIndex: peakMonth,
                     axisMax: axisMax,
                   ),
                 ),
@@ -242,9 +251,10 @@ class RevenueView extends GetView<RevenueController> {
   }
 
   Widget _buildXAxisLabels(BuildContext context, int count) {
-    // Day markers (1 → 29 مايو), each sitting under its real point on the chart.
-    const days = [1, 8, 15, 22, 29];
-    final month = 'May'.tr;
+    // Only a few of the 12 months are labelled, otherwise they overlap. Each
+    // sits under its real point on the chart.
+    const marks = [0, 3, 6, 9, 11];
+    final shown = marks.where((m) => m < count).toList();
     final style = TextStyle(fontSize: 9, color: context.theme.hintColor);
 
     return SizedBox(
@@ -254,16 +264,16 @@ class RevenueView extends GetView<RevenueController> {
           final width = box.maxWidth;
           return Stack(
             clipBehavior: Clip.none,
-            children: days.where((d) => d <= count).map((d) {
-              // point d (1-indexed) is drawn at x = (d-1)/(count-1) of the width
-              final t = count > 1 ? (d - 1) / (count - 1) : 0.0;
-              final label = Text('$d $month', style: style);
+            children: shown.map((m) {
+              // point m (0-indexed) is drawn at x = m/(count-1) of the width
+              final t = count > 1 ? m / (count - 1) : 0.0;
+              final label = Text(_monthKeys[m].tr, style: style);
               // Anchor first label to the left edge and last to the right edge
               // so nothing clips; center the rest on their point.
-              if (d == days.first) {
+              if (m == shown.first) {
                 return Positioned(left: 0, child: label);
               }
-              if (d == days.where((x) => x <= count).last) {
+              if (m == shown.last) {
                 return Positioned(right: 0, child: label);
               }
               return Positioned(
@@ -279,6 +289,20 @@ class RevenueView extends GetView<RevenueController> {
       ),
     );
   }
+
+  // ─── Month helpers ────────────────────────────────────────────────────────
+
+  /// Translation keys for the month labels. The backend sends `month` in
+  /// English no matter the `Accept-Language` header, so the label is always
+  /// derived from the value's position in the year and localized here instead.
+  static const _monthKeys = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// How many months of the year have data worth plotting — everything up to
+  /// and including the current one.
+  int _elapsedMonths(int count) => DateTime.now().month.clamp(1, count);
 
   // ─── Number helpers ───────────────────────────────────────────────────────
 
@@ -325,12 +349,18 @@ class RevenueView extends GetView<RevenueController> {
 
 class _LineChartPainter extends CustomPainter {
   final List<double> data;
+  // How many of [data]'s points to actually draw. The X axis still spans the
+  // full list, so a partly-elapsed year keeps all 12 month slots.
+  final int? plotCount;
   final Color lineColor;
   final bool showDots;
   final bool showGrid;
   final double fillOpacity;
   final String? tooltip;
   final Color? tooltipBg;
+  // Which point the tooltip bubble and the emphasized dot sit on. Defaults to
+  // the last drawn point.
+  final int? tooltipIndex;
   // When set, normalizes Y against this ceiling (must match Y-axis labels).
   // When null, self-computes from data min→max (used for the sparkline).
   final double? axisMax;
@@ -341,23 +371,27 @@ class _LineChartPainter extends CustomPainter {
     required this.showDots,
     required this.showGrid,
     required this.fillOpacity,
+    this.plotCount,
     this.tooltip,
     this.tooltipBg,
+    this.tooltipIndex,
     this.axisMax,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (data.length < 2) return;
+    if (data.isEmpty) return;
+    final count = (plotCount ?? data.length).clamp(1, data.length);
+    final drawn = data.take(count);
 
-    final dataMax = data.reduce((a, b) => a > b ? a : b);
-    final dataMin = data.reduce((a, b) => a < b ? a : b);
+    final dataMax = drawn.reduce((a, b) => a > b ? a : b);
+    final dataMin = drawn.reduce((a, b) => a < b ? a : b);
     // Use the axis ceiling when provided so the line matches the Y-axis labels.
     // Fall back to min→max normalization for the compact sparkline.
     final yMax = axisMax ?? dataMax;
     final yMin = axisMax != null ? 0.0 : dataMin;
     final range = (yMax - yMin) == 0 ? 1.0 : (yMax - yMin);
-    final xStep = size.width / (data.length - 1);
+    final xStep = data.length > 1 ? size.width / (data.length - 1) : 0.0;
 
     Offset toPoint(int i) => Offset(
           i * xStep,
@@ -365,7 +399,7 @@ class _LineChartPainter extends CustomPainter {
               size.height * 0.05,
         );
 
-    final points = List.generate(data.length, toPoint);
+    final points = List.generate(count, toPoint);
 
     // Grid
     if (showGrid) {
@@ -379,7 +413,7 @@ class _LineChartPainter extends CustomPainter {
     }
 
     // Fill under line
-    if (fillOpacity > 0) {
+    if (fillOpacity > 0 && points.length > 1) {
       final fillPath = Path()..moveTo(points.first.dx, size.height);
       for (final p in points) {
         fillPath.lineTo(p.dx, p.dy);
@@ -401,11 +435,13 @@ class _LineChartPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    final path = Path()..moveTo(points[0].dx, points[0].dy);
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
+    if (points.length > 1) {
+      final path = Path()..moveTo(points[0].dx, points[0].dy);
+      for (int i = 1; i < points.length; i++) {
+        path.lineTo(points[i].dx, points[i].dy);
+      }
+      canvas.drawPath(path, linePaint);
     }
-    canvas.drawPath(path, linePaint);
 
     // Small hollow dot at every data point
     if (showDots) {
@@ -419,12 +455,13 @@ class _LineChartPainter extends CustomPainter {
         canvas.drawCircle(p, 2.6, dotRing);
       }
 
-      // Emphasized last point
-      final last = points.last;
+      // Emphasized point — the one the tooltip is about
+      final last = points[(tooltipIndex ?? points.length - 1)
+          .clamp(0, points.length - 1)];
       canvas.drawCircle(last, 4, Paint()..color = lineColor);
       canvas.drawCircle(last, 2, Paint()..color = Colors.white);
 
-      // Tooltip bubble above the last point
+      // Tooltip bubble above that point
       if (tooltip != null && tooltipBg != null) {
         final tp = TextPainter(
           text: TextSpan(
@@ -460,5 +497,10 @@ class _LineChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LineChartPainter old) =>
-      old.data != data || old.lineColor != lineColor || old.axisMax != axisMax;
+      old.data != data ||
+      old.plotCount != plotCount ||
+      old.lineColor != lineColor ||
+      old.tooltip != tooltip ||
+      old.tooltipIndex != tooltipIndex ||
+      old.axisMax != axisMax;
 }

@@ -105,15 +105,26 @@ class AppTranslations extends Translations {
       // --- Revenue View ---
       'Wallet': 'Wallet',
       'Total Monthly Income': 'Total Monthly Income',
-      'SAR': 'SAR',
+      'USD': 'USD',
       'Total Paid Visits': 'Total Paid Visits',
       'Visit': 'Visit',
-      'Revenue Overview': 'Revenue Overview',
+      'Yearly Income': 'Yearly Income',
       'Recent Transactions': 'Recent Transactions',
       'View All Transactions': 'View All Transactions',
       'No transactions yet': 'No transactions yet',
       'No data': 'No data',
+      'Jan': 'Jan',
+      'Feb': 'Feb',
+      'Mar': 'Mar',
+      'Apr': 'Apr',
       'May': 'May',
+      'Jun': 'Jun',
+      'Jul': 'Jul',
+      'Aug': 'Aug',
+      'Sep': 'Sep',
+      'Oct': 'Oct',
+      'Nov': 'Nov',
+      'Dec': 'Dec',
 
       // --- Examination View ---
       'Patient Examination': 'Patient Examination',
@@ -153,6 +164,27 @@ class AppTranslations extends Translations {
       'Please save the diagnosis first': 'Please save the diagnosis first',
       'Please complete all medication fields':
           'Please complete all medication fields',
+
+      // --- Invoice View ---
+      'Invoice': 'Invoice',
+      'New Invoice': 'New Invoice',
+      'Patient ID': 'Patient ID',
+      // مفتاح 'Consultation Fee' معرَّف أصلاً في قسم لوحة التحكم أعلاه
+      'General Consultation': 'General Consultation',
+      'Extra Services': 'Extra Services',
+      'Add Item': 'Add Item',
+      'Service Name': 'Service Name',
+      'e.g. Nebulizer session': 'e.g. Nebulizer session',
+      'Cost': 'Cost',
+      'Clear': 'Clear',
+      'No extra services added': 'No extra services added',
+      'Total Amount': 'Total Amount',
+      'Please enter the service name': 'Please enter the service name',
+      'Please enter a valid cost': 'Please enter a valid cost',
+      'Please add the service or clear the fields':
+          'Please add the service or clear the fields',
+      'Patient data is not loaded yet': 'Patient data is not loaded yet',
+      'Loading...': 'Loading...',
 
       // --- Settings Section (New) ---
       'Working Settings': 'Working Settings',
@@ -320,15 +352,26 @@ class AppTranslations extends Translations {
       // --- Revenue View ---
       'Wallet': 'المحفظة',
       'Total Monthly Income': 'إجمالي الدخل الشهري',
-      'SAR': 'ريال',
+      'USD': 'دولار',
       'Total Paid Visits': 'إجمالي الزيارات المدفوعة',
       'Visit': 'زيارة',
-      'Revenue Overview': 'نظرة عامة على الإيرادات',
+      'Yearly Income': 'الدخل السنوي',
       'Recent Transactions': 'أحدث المعاملات',
       'View All Transactions': 'عرض جميع المعاملات',
       'No transactions yet': 'لا توجد معاملات بعد',
       'No data': 'لا توجد بيانات',
+      'Jan': 'يناير',
+      'Feb': 'فبراير',
+      'Mar': 'مارس',
+      'Apr': 'أبريل',
       'May': 'مايو',
+      'Jun': 'يونيو',
+      'Jul': 'يوليو',
+      'Aug': 'أغسطس',
+      'Sep': 'سبتمبر',
+      'Oct': 'أكتوبر',
+      'Nov': 'نوفمبر',
+      'Dec': 'ديسمبر',
 
       // --- Examination View ---
       'Patient Examination': 'معاينة المريض',
@@ -366,6 +409,27 @@ class AppTranslations extends Translations {
       'Please enter both height and weight': 'الرجاء إدخال الطول والوزن معاً',
       'Please save the diagnosis first': 'الرجاء حفظ التشخيص أولاً',
       'Please complete all medication fields': 'الرجاء إكمال جميع حقول الدواء',
+
+      // --- Invoice View ---
+      'Invoice': 'الفاتورة',
+      'New Invoice': 'فاتورة جديدة',
+      'Patient ID': 'معرف المريض',
+      // مفتاح 'Consultation Fee' معرَّف أصلاً في قسم لوحة التحكم أعلاه
+      'General Consultation': 'كشف عام',
+      'Extra Services': 'خدمات إضافية',
+      'Add Item': 'إضافة خدمة',
+      'Service Name': 'اسم الخدمة',
+      'e.g. Nebulizer session': 'مثال: جلسة بخّار',
+      'Cost': 'التكلفة',
+      'Clear': 'مسح',
+      'No extra services added': 'لا توجد خدمات إضافية',
+      'Total Amount': 'المبلغ الإجمالي',
+      'Please enter the service name': 'الرجاء إدخال اسم الخدمة',
+      'Please enter a valid cost': 'الرجاء إدخال تكلفة صحيحة',
+      'Please add the service or clear the fields':
+          'الرجاء إضافة الخدمة أو إفراغ الحقول',
+      'Patient data is not loaded yet': 'لم يتم تحميل بيانات المريض بعد',
+      'Loading...': 'جارٍ التحميل...',
 
       // --- Settings Section (New) ---
       'Working Settings': 'إعدادات العمل',
