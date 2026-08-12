@@ -38,8 +38,6 @@ class RevenueView extends GetView<RevenueController> {
               children: [
                 _buildIncomeCard(context),
                 const SizedBox(height: 16),
-                _buildPaidVisitsCard(context),
-                const SizedBox(height: 16),
                 _buildChartCard(context),
               ],
             ),
@@ -117,33 +115,6 @@ class RevenueView extends GetView<RevenueController> {
 
   // ─── White paid-visits card ───────────────────────────────────────────────
 
-  Widget _buildPaidVisitsCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Total Paid Visits'.tr,
-            style: TextStyle(
-              color: context.theme.hintColor,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Obx(() => Text(
-                '${controller.totalPaidVisits.value} ${'Visit'.tr}',
-                style: context.theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                ),
-              )),
-        ],
-      ),
-    );
-  }
 
   // ─── White chart card (title + tooltip inside) ────────────────────────────
 
