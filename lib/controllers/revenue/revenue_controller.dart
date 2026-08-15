@@ -9,7 +9,9 @@ class RevenueController extends BaseController {
 
   final monthlyRevenue = 0.0.obs;
   final totalPaidVisits = 0.obs;
-  final chartData = <double>[].obs;
+
+  /// One value per month of the current year, January → December.
+  final yearlyIncome = <double>[].obs;
 
   @override
   void onInit() {
@@ -22,7 +24,7 @@ class RevenueController extends BaseController {
     await Future.wait([
       _run(() async => monthlyRevenue.value = await repo.getMonthlyRevenue()),
       _run(() async => totalPaidVisits.value = await repo.getTotalPaidVisits()),
-      _run(() async => chartData.assignAll(await repo.getRevenueChartData())),
+      _run(() async => yearlyIncome.assignAll(await repo.getYearlyIncome())),
     ]);
     hideLoading();
   }

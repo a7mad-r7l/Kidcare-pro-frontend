@@ -22,7 +22,13 @@ class RevenueApi {
     return (await http.get(Uri.parse('$baseUrl/api/doctor/income'), headers: await _getHeaders())).body;
   }
 
-  // TODO: implement when the backend exposes these endpoints.
-  Future<String> getRevenueChartData() async => '';
+  /// GET /api/doctor/yearlyIncome → the current year's earnings grouped by month
+  /// as a top-level array of 12 items, January → December:
+  /// `[{ "month": "January", "total_income": 0.0 }, …]`.
+  Future<String> getYearlyIncome() async {
+    return (await http.get(Uri.parse('$baseUrl/api/doctor/yearlyIncome'), headers: await _getHeaders())).body;
+  }
+
+  // TODO: implement when the backend exposes this endpoint.
   Future<String> getTotalPaidVisits() async => '';
 }

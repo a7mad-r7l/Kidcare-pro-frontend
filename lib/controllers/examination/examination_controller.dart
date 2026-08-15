@@ -178,6 +178,16 @@ class ExaminationController extends BaseController {
     }
   }
 
+  // فتح شاشة الفاتورة — تحتاج معرف الموعد فلا تُفتح قبل تحميل بيانات المريض
+  void openInvoice() {
+    final current = patient.value;
+    if (current == null || current.appointmentId == 0) {
+      showInfo('Patient data is not loaded yet'.tr);
+      return;
+    }
+    Get.toNamed('/new_invoice', arguments: current);
+  }
+
   void addMedicationField() {
     medications.add(MedicationFormData());
   }

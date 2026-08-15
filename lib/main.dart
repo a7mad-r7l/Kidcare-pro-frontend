@@ -26,6 +26,12 @@ import 'controllers/examination/examination_controller.dart';
 import 'core/apis/examination/examination_api.dart';
 import 'core/repos/examination/examination_repo.dart';
 
+// Invoice
+import 'views/invoice/new_invoice_view.dart';
+import 'controllers/invoice/invoice_controller.dart';
+import 'core/apis/invoice/invoice_api.dart';
+import 'core/repos/invoice/invoice_repo.dart';
+
 // Revenue
 
 import 'controllers/revenue/revenue_controller.dart';
@@ -232,6 +238,17 @@ class MyApp extends StatelessWidget {
             );
             Get.lazyPut<ExaminationController>(
               () => ExaminationController(repo: Get.find()),
+            );
+          }),
+        ),
+        GetPage(
+          name: '/new_invoice',
+          page: () => const NewInvoiceView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<InvoiceApi>(() => InvoiceApi());
+            Get.lazyPut<InvoiceRepo>(() => InvoiceRepo(api: Get.find()));
+            Get.lazyPut<InvoiceController>(
+              () => InvoiceController(repo: Get.find()),
             );
           }),
         ),
