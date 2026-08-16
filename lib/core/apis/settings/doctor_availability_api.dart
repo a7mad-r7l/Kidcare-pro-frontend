@@ -34,7 +34,7 @@ class DoctorAvailabilityApi {
             'end_time': endTime,
           }),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 20));
 
     return response;
   }
@@ -46,7 +46,7 @@ class DoctorAvailabilityApi {
           Uri.parse('$baseUrl/api/doctors/$doctorId/availabilities'),
           headers: await _getHeaders(),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 20));
   }
 
   // DELETE
@@ -56,6 +56,19 @@ class DoctorAvailabilityApi {
           Uri.parse('$baseUrl/api/doctor/availability/$id'),
           headers: await _getHeaders(),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 20));
+  }
+
+  Future<http.Response> deleteAppointmentsByDate( String date) async {
+    final url = Uri.parse('$baseUrl/api/doctor/appointments/cancelAppointments');
+    final response = await http
+        .put(
+          url,
+          headers: await _getHeaders(),
+          body: jsonEncode({'date': date}),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    return response;
   }
 }

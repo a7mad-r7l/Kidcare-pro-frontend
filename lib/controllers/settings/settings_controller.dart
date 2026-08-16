@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
 import '../../core/helper/secure_storage_service.dart';
 import '../../core/repos/home/home_repo.dart';
+import '../../core/repos/settings/doctor_availability_repo.dart';
 import '../base_controller.dart';
 
 class SettingsController extends BaseController {
+  final DoctorAvailabilityRepo repo;
+
+  SettingsController({required this.repo});
+
   void goToAvailabilities() {
     Get.toNamed('/doctor_availability');
   }
@@ -94,30 +100,46 @@ class SettingsController extends BaseController {
     Get.updateLocale(targetLocale);
   }
 
-
   void deleteAccount() {
     Get.dialog(
       AlertDialog(
         backgroundColor: Get.theme.cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Account'.tr, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to permanently delete your account? This action cannot be undone.'.tr),
+        title: Text(
+          'Delete Account'.tr,
+          style: const TextStyle(
+            color: Colors.red,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to permanently delete your account? This action cannot be undone.'
+              .tr,
+        ),
         actions: [
           TextButton(
             onPressed: () => Get.back(),
-            child: Text('Cancel'.tr, style: TextStyle(color: Get.theme.hintColor)),
+            child: Text(
+              'Cancel'.tr,
+              style: TextStyle(color: Get.theme.hintColor),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red.shade800,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () async {
               Get.back();
               await _confirmDeleteAccount();
             },
-            child: Text('Delete'.tr, style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              'Delete'.tr,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -127,15 +149,74 @@ class SettingsController extends BaseController {
   Future<void> _confirmDeleteAccount() async {
     showLoading();
     try {
-
       final homeRepo = Get.find<HomeRepo>();
       final msg = await homeRepo.deleteDoctorAccount();
 
       showSuccess(msg);
 
-
       await SecureStorage.removeAll();
       Get.offAllNamed('/login');
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+
+  Future<void> pickDateToCancelAppointments(BuildContext context) async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Get.theme.primaryColor,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (pickedDate != null) {
+      String formattedDate = DateFormat('yyyy-MM-dd').format(pickedDate);
+
+      _confirmCancellationDialog(formattedDate);
+    }
+  }
+
+  void _confirmCancellationDialog(String date) {
+    Get.defaultDialog(
+      title: 'Confirm Cancellation'.tr,
+      titleStyle: const TextStyle(
+        color: Colors.red,
+        fontWeight: FontWeight.bold,
+      ),
+      middleText:
+          '${'Are you sure you want to cancel all appointments for today '.tr}$date?',
+      textConfirm: 'Confirm Cancellation'.tr,
+      textCancel: 'Back'.tr,
+      confirmTextColor: Colors.white,
+      buttonColor: Colors.red,
+      cancelTextColor: Get.theme.primaryColor,
+      onConfirm: () {
+        Get.back();
+        _executeCancellation(date);
+      },
+    );
+  }
+
+  Future<void> _executeCancellation(String date) async {
+    showLoading();
+    try {
+      final message = await repo.deleteAppointmentsByDate(date);
+      showSuccess(message);
     } catch (e) {
       handleError(e);
     } finally {

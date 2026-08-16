@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../core/repos/home/home_repo.dart';
 import '../../models/home/doctor_dashboard_model.dart';
+import '../../service/notification_service.dart';
 import '../base_controller.dart';
 
 class HomeController extends BaseController {
@@ -33,6 +34,7 @@ class HomeController extends BaseController {
   void onInit() {
     super.onInit();
     fetchAllDashboardData();
+    NotificationService.sendFCMTokenToServer();
   }
 
   // دالة حل مسار الصور

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+
 import '../../core/repos/settings/doctor_availability_repo.dart';
 import '../../models/settings/availability_item_model.dart';
 import '../base_controller.dart';
@@ -23,8 +24,8 @@ class DoctorAvailabilityController extends BaseController {
     'sunday',
   ];
   final selectedDay = 'monday'.obs;
-  final startTime = const TimeOfDay(hour: 12, minute: 0).obs;
-  final endTime = const TimeOfDay(hour: 17, minute: 0).obs;
+  final startTime = const TimeOfDay(hour: 09, minute: 0).obs; // 👈 جعلنا الوقت الافتراضي منطقي (9 صباحاً)
+  final endTime = const TimeOfDay(hour: 17, minute: 0).obs;   // 👈 (5 مساءً)
 
   @override
   void onInit() {
@@ -64,6 +65,13 @@ class DoctorAvailabilityController extends BaseController {
         doctorId = Get.find<HomeController>().doctorData.value?.id ?? 0;
       }
 
+      // 👈 التعديل الأول: معالجة حالة الـ ID الصفري بسبب سرعة تنقل الطبيب
+      if (doctorId == 0) {
+        isFetching.value = false;
+        handleError('Please wait for home data to load first'.tr);
+        return;
+      }
+
       final data = await repo.getAvailabilities(doctorId);
       availabilitiesList.assignAll(data);
     } catch (e) {
@@ -87,6 +95,15 @@ class DoctorAvailabilityController extends BaseController {
   }
 
   Future<void> saveWorkingHours() async {
+    // 👈 التعديل الثاني: التحقق الرياضي والمنطقي للوقت قبل إرساله للباك إند
+    final startMinutes = startTime.value.hour * 60 + startTime.value.minute;
+    final endMinutes = endTime.value.hour * 60 + endTime.value.minute;
+
+    if (startMinutes >= endMinutes) {
+      handleError('End time must be after start time'.tr);
+      return;
+    }
+
     showLoading();
     try {
       final result = await repo.addAvailability(
@@ -101,8 +118,8 @@ class DoctorAvailabilityController extends BaseController {
             : 'Working hours added successfully.'.tr,
       );
 
-      Get.back();
-      fetchAvailabilities();
+      Get.back(); // إغلاق الـ BottomSheet
+      fetchAvailabilities(); // تحديث القائمة
     } catch (e) {
       handleError(e);
     } finally {

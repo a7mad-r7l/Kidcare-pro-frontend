@@ -92,4 +92,17 @@ class DoctorAvailabilityRepo {
       throw errorMessage;
     }
   }
+
+  Future<String> deleteAppointmentsByDate(String date) async {
+    final res = await api.deleteAppointmentsByDate(date);
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final decoded = jsonDecode(_cleanJson(res.body));
+      return decoded['message'] ?? 'Deleted successfully'.tr;
+    } else {
+      final decoded = jsonDecode(_cleanJson(res.body));
+      throw Exception(decoded['message'] ?? 'Failed to delete appointments'.tr);
+    }
+  }
+
 }

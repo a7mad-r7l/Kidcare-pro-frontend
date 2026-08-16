@@ -20,4 +20,10 @@ class AppointmentDetailsApi {
     final response = await http.get(url, headers: await _getHeaders());
     return response.body;
   }
+  // ───  إلغاء الموعد ───
+  Future<String> cancelAppointment(int appointmentId) async {
+    final url = Uri.parse('$baseUrl/api/doctor/appointments/$appointmentId/cancel');
+    final response = await http.put(url, headers: await _getHeaders());
+    return response.body;
+  }
 }

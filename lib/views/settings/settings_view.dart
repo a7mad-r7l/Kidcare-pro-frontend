@@ -10,7 +10,8 @@ class SettingsView extends GetView<SettingsController> {
     return Scaffold(
       backgroundColor: context.theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Settings'.tr), // 👈 كلمة إعدادات فقط
+        title: Text('Settings'.tr),
+        // 👈 كلمة إعدادات فقط
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -42,11 +43,22 @@ class SettingsView extends GetView<SettingsController> {
                   icon: Icons.lock_open_outlined,
                   onTap: () => controller.changePassword(),
                 ),
+                _buildDivider(context),
+                _buildSettingsTile(
+                  context,
+                  title: 'Cancel specific day appointments'.tr,
+                  subtitle:
+                      'Select a date from the calendar to cancel all its'.tr,
+                  icon: Icons.event_busy,
+                  iconColor: Colors.red,
+                  onTap: () =>controller.pickDateToCancelAppointments(context),
+                ),
               ],
             ),
           ),
 
-          const SizedBox(height: 20), // 👈 فصل المجموعات كما في تطبيق المريض
+
+          const SizedBox(height: 20),
 
           // ─── المجموعة الثانية: التفضيلات (اللغة والمظهر) ───
           Container(
@@ -61,7 +73,8 @@ class SettingsView extends GetView<SettingsController> {
                   title: 'Language'.tr,
                   subtitle: 'Customize app language and view'.tr,
                   icon: Icons.language_outlined,
-                  onTap: () => controller.showLanguageDialog(), // 👈 تم ربطها بالدالة الجديدة هنا
+                  onTap: () => controller
+                      .showLanguageDialog(), // 👈 تم ربطها بالدالة الجديدة هنا
                 ),
                 _buildDivider(context),
                 _buildSettingsTile(
@@ -76,7 +89,6 @@ class SettingsView extends GetView<SettingsController> {
           ),
 
           const SizedBox(height: 20), // 👈 فصل المجموعات
-
           // ─── المجموعة الثالثة: الإجراءات الحساسة (حذف الحساب) ───
           Container(
             decoration: BoxDecoration(
@@ -102,14 +114,14 @@ class SettingsView extends GetView<SettingsController> {
   }
 
   Widget _buildSettingsTile(
-      BuildContext context, {
-        required String title,
-        required String subtitle,
-        required IconData icon,
-        required VoidCallback onTap,
-        Color? textColor,
-        Color? iconColor,
-      }) {
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required VoidCallback onTap,
+    Color? textColor,
+    Color? iconColor,
+  }) {
     final isRtl = Get.locale?.languageCode == 'ar';
     return InkWell(
       onTap: onTap,
@@ -122,10 +134,16 @@ class SettingsView extends GetView<SettingsController> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: (iconColor ?? context.theme.primaryColor).withOpacity(0.08),
+                color: (iconColor ?? context.theme.primaryColor).withOpacity(
+                  0.08,
+                ),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: iconColor ?? context.theme.primaryColor, size: 24),
+              child: Icon(
+                icon,
+                color: iconColor ?? context.theme.primaryColor,
+                size: 24,
+              ),
             ),
             const SizedBox(width: 16),
             // النصوص الأساسية والثانوية
@@ -168,7 +186,10 @@ class SettingsView extends GetView<SettingsController> {
   Widget _buildDivider(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(left: 70, right: 16),
-      child: Divider(color: context.theme.dividerColor.withOpacity(0.4), height: 1),
+      child: Divider(
+        color: context.theme.dividerColor.withOpacity(0.4),
+        height: 1,
+      ),
     );
   }
 }

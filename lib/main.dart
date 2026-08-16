@@ -2,10 +2,18 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:kidcare_pro/service/fcm_service.dart';
+import 'package:kidcare_pro/service/notification_service.dart';
+import 'package:kidcare_pro/views/notification/doctor_notification_view.dart';
+import 'package:kidcare_pro/views/profile/doctor_profile_view.dart';
 
+import 'controllers/notification/doctor_notification_controller.dart';
+import 'controllers/profile/doctor_profile_controller.dart';
+import 'core/apis/notification/doctor_notification_api.dart';
+import 'core/apis/profile/doctor_profile_api.dart';
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
+import 'core/repos/notification/doctor_notification_repo.dart';
+import 'core/repos/profile/doctor_profile_repo.dart';
 import 'core/theme/app_themes.dart';
 
 // Login
@@ -70,19 +78,11 @@ import 'core/repos/patients/medical_file_repo.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  print("STEP 1");
-
   await initializeDateFormatting();
-
-  print("STEP 2");
 
   await Firebase.initializeApp();
 
-  print("STEP 3");
-
-  await FCMService.printFCMToken();
-
-  print("STEP 4");
+  await NotificationService.initialize();
 
   final String savedToken = await SecureStorage.getToken();
   final String initialRoute = savedToken.isNotEmpty ? '/doctor_home' : '/login';
@@ -191,7 +191,7 @@ class MyApp extends StatelessWidget {
               () => PatientsController(repo: Get.find()),
             );
 
-            // Revenue (مهم جداً لحماية التبويب الثالث من الانهيار)
+            // Revenue
             Get.lazyPut<RevenueApi>(() => RevenueApi());
             Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
             Get.lazyPut<RevenueController>(
@@ -199,7 +199,13 @@ class MyApp extends StatelessWidget {
             );
 
             // Settings
-            Get.lazyPut<SettingsController>(() => SettingsController());
+            Get.lazyPut<DoctorAvailabilityApi>(() => DoctorAvailabilityApi());
+            Get.lazyPut<DoctorAvailabilityRepo>(
+              () => DoctorAvailabilityRepo(api: Get.find()),
+            );
+            Get.lazyPut<SettingsController>(
+              () => SettingsController(repo: Get.find()),
+            );
           }),
         ),
         GetPage(
@@ -249,6 +255,30 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<InvoiceRepo>(() => InvoiceRepo(api: Get.find()));
             Get.lazyPut<InvoiceController>(
               () => InvoiceController(repo: Get.find()),
+            );
+          }),
+        ),
+        GetPage(
+          name: '/doctor_profile',
+          page: () => const DoctorProfileView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<DoctorProfileApi>(() => DoctorProfileApi());
+            Get.lazyPut<DoctorProfileRepo>(() => DoctorProfileRepo());
+            Get.lazyPut<DoctorProfileController>(
+              () => DoctorProfileController(repo: Get.find()),
+            );
+          }),
+        ),
+        GetPage(
+          name: '/doctor_notifications',
+          page: () => const DoctorNotificationView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<DoctorNotificationApi>(() => DoctorNotificationApi());
+            Get.lazyPut<DoctorNotificationRepo>(
+              () => DoctorNotificationRepo(api: Get.find()),
+            );
+            Get.lazyPut<DoctorNotificationController>(
+              () => DoctorNotificationController(repo: Get.find()),
             );
           }),
         ),

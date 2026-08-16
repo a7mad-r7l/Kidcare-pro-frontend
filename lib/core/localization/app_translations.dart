@@ -245,10 +245,40 @@ class AppTranslations extends Translations {
           'Are you sure you want to permanently delete your account? This action cannot be undone.',
       'Delete': 'Delete',
       'Continue': 'Continue',
-      'Are you sure you want to delete this working day?': 'Are you sure you want to delete this working day?',
+      'Are you sure you want to delete this working day?':
+          'Are you sure you want to delete this working day?',
       'Deleted successfully': 'Deleted successfully',
       'Cannot delete this availability': 'Cannot delete this availability',
       'Server error': 'Server error',
+      'There are no available days': 'There are no available days',
+      'Please wait for home data to load first':
+          'Please wait for home data to load first',
+      'End time must be after start time': 'End time must be after start time',
+      // --- Doctor Profile View ---
+      'Personal Profile': 'Personal Profile',
+      'Failed to load profile': 'Failed to load profile',
+      'First Name': 'First Name',
+      'Last Name': 'Last Name',
+      'Phone Number': 'Phone Number',
+      'Email': 'Email',
+      'Address': 'Address',
+      'Experience Years': 'Experience Years',
+      'Not set': 'Not set',
+      'Edit': 'Edit',
+      'Save': 'Save',
+      'Profile updated successfully': 'Profile updated successfully',
+      'Are you sure you want to cancel this appointment?':
+          'Are you sure you want to cancel this appointment?',
+      'Confirm': 'Confirm',
+      'Back': 'Back',
+      'Notifications': 'Notifications',
+      'No notifications yet': 'No notifications yet',
+      'Cancel specific day appointments': 'Cancel specific day appointments',
+      'Select a date from the calendar to cancel all its':
+          'Select a date from the calendar to cancel all its',
+      'Confirm Cancellation': 'Confirm Cancellation',
+      'Are you sure you want to cancel all appointments for today ':
+          'Are you sure you want to cancel all appointments for today ',
     },
 
     // القاموس العربي
@@ -489,10 +519,41 @@ class AppTranslations extends Translations {
           'هل أنت متأكد أنك تريد حذف حسابك نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.',
       'Delete': 'حذف',
       'Continue': 'متابعة',
-      'Are you sure you want to delete this working day?': 'هل أنت متأكد من حذف وقت الدوام هذا؟',
+      'Are you sure you want to delete this working day?':
+          'هل أنت متأكد من حذف وقت الدوام هذا؟',
       'Deleted successfully': 'تم الحذف بنجاح',
       'Cannot delete this availability': 'لا يمكن حذف وقت الدوام هذا',
       'Server error': 'خطأ في الخادم',
+      'There are no available days': 'لا توجد ايام متاحة',
+      'Please wait for home data to load first':
+          'الرجاء انتظار تحميل بيانات الرئيسية أولاً',
+      'End time must be after start time':
+          'وقت النهاية يجب أن يكون بعد وقت البداية',
+      // --- Doctor Profile View ---
+      'Personal Profile': 'الملف الشخصي',
+      'Failed to load profile': 'فشل في تحميل الملف الشخصي',
+      'First Name': 'الاسم الأول',
+      'Last Name': 'الكنية',
+      'Phone Number': 'رقم الهاتف',
+      'Email': 'البريد الإلكتروني',
+      'Address': 'العنوان',
+      'Experience Years': 'سنوات الخبرة',
+      'Not set': 'غير محدد',
+      'Edit': 'تعديل',
+      'Save': 'حفظ',
+      'Profile updated successfully': 'تم تحديث الملف الشخصي بنجاح',
+      'Are you sure you want to cancel this appointment?':
+          'هل أنت متأكد أنك تريد إلغاء هذا الموعد؟',
+      'Confirm': 'تأكيد',
+      'Back': 'تراجع',
+      'Notifications': 'الإشعارات',
+      'No notifications yet': 'لا توجد إشعارات بعد',
+      'Cancel specific day appointments': 'إلغاء مواعيد يوم محدد',
+      'Select a date from the calendar to cancel all its':
+          'اختر تاريخاً من التقويم لإلغاء جميع مواعيده',
+      'Confirm Cancellation': 'تأكيد الإلغاء',
+      'Are you sure you want to cancel all appointments for today ':
+          'هل أنت متأكد أنك تريد إلغاء جميع المواعيد ليوم ',
     },
   };
 }

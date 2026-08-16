@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/helper/secure_storage_service.dart';
 import '../../core/repos/auth/login_repo.dart';
+import '../../service/notification_service.dart';
 import '../base_controller.dart';
 
 class LoginController extends BaseController {
@@ -31,6 +32,7 @@ class LoginController extends BaseController {
 
       if (result.token.isNotEmpty) {
         await SecureStorage.storeToken(result.token);
+        await NotificationService.sendFCMTokenToServer();
 
         hideLoading();
 
@@ -434,6 +436,16 @@ class ExaminationController extends BaseController {
     }
   }
 
+  // فتح شاشة الفاتورة — تحتاج معرف الموعد فلا تُفتح قبل تحميل بيانات المريض
+  void openInvoice() {
+    final current = patient.value;
+    if (current == null || current.appointmentId == 0) {
+      showInfo('Patient data is not loaded yet'.tr);
+      return;
+    }
+    Get.toNamed('/new_invoice', arguments: current);
+  }
+
   void addMedicationField() {
     medications.add(MedicationFormData());
   }
@@ -542,6 +554,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants.dart';
 import '../../core/repos/home/home_repo.dart';
 import '../../models/home/doctor_dashboard_model.dart';
+import '../../service/notification_service.dart';
 import '../base_controller.dart';
 
 class HomeController extends BaseController {
@@ -571,6 +584,7 @@ class HomeController extends BaseController {
   void onInit() {
     super.onInit();
     fetchAllDashboardData();
+    NotificationService.sendFCMTokenToServer();
   }
 
   // دالة حل مسار الصور
@@ -613,7 +627,6 @@ class HomeController extends BaseController {
         repo.getNextPatient(),
         repo.getRemainingPatients(),
       ]);
-
       doctorData.value = results[0] as DoctorHomeModel;
       totalAppointments.value = results[1] as int;
       completedAppointments.value = results[2] as int;
@@ -670,6 +683,234 @@ class HomeController extends BaseController {
 }
 ```
 
+### File: lib\controllers\invoice\invoice_controller.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:intl/intl.dart';
+import '../../core/repos/invoice/invoice_repo.dart';
+import '../../models/home/doctor_dashboard_model.dart';
+import '../../models/invoice/invoice_model.dart';
+import '../base_controller.dart';
+
+class InvoiceController extends BaseController {
+  final InvoiceRepo repo;
+
+  InvoiceController({required this.repo});
+
+  // تفاصيل الموعد (أجرة الكشف والعملة) — تُجلب عند فتح الشاشة
+  final appointment = Rxn<AppointmentInvoiceModel>();
+
+  // الفاتورة الحالية كما يرجعها الخادم بعد كل إضافة أو حذف
+  final invoice = Rxn<InvoiceModel>();
+
+  final serviceNameController = TextEditingController();
+  final costController = TextEditingController();
+
+  // مؤشرات تحميل منفصلة حتى لا يُقفل زر الحفظ أثناء إضافة خدمة
+  final isSubmittingItem = false.obs;
+  final deletingAdditionId = RxnInt();
+
+  late final int appointmentId;
+
+  // بيانات المريض الممرَّرة من شاشة المعاينة — تُرسم الترويسة فوراً قبل وصول الرد
+  PatientModel? patient;
+
+  @override
+  void onInit() {
+    super.onInit();
+    final args = Get.arguments;
+    if (args is PatientModel) {
+      patient = args;
+      appointmentId = args.appointmentId;
+    } else {
+      appointmentId = args is int ? args : 0;
+    }
+    if (appointmentId != 0) fetchAppointment();
+  }
+
+  Future<void> fetchAppointment() async {
+    showLoading();
+    try {
+      appointment.value = await repo.getAppointment(appointmentId);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+
+  // ─── القيم المعروضة ───
+  // تُفضَّل قيم الخادم متى توفرت (بعد أول إضافة)، وإلا فقيم تفاصيل الموعد.
+
+  List<AdditionModel> get additions => invoice.value?.additions ?? const [];
+
+  num get consultationFee =>
+      invoice.value?.appointmentPrice ?? appointment.value?.consultationFee ?? 0;
+
+  num get extrasTotal => invoice.value?.totalAdditions ?? 0;
+
+  num get totalAmount => invoice.value?.finalPrice ?? consultationFee;
+
+  String get currencySymbol {
+    final code = appointment.value?.currency.toUpperCase() ?? '';
+    return switch (code) {
+      'USD' => '\$',
+      'EUR' => '€',
+      'INR' => '₹',
+      'SYP' => 'ل.س',
+      _ => code,
+    };
+  }
+
+  String formatMoney(num value) =>
+      '$currencySymbol ${value.toStringAsFixed(2)}'.trim();
+
+  String get patientName =>
+      appointment.value?.child?.name ?? patient?.name ?? '';
+
+  String get patientImage =>
+      appointment.value?.child?.image ?? patient?.image ?? '';
+
+  // نفس صيغة معرف المريض المستخدمة في شاشة المعاينة ليتطابق العرض في الشاشتين
+  String get formattedPatientId {
+    final id = appointment.value?.child?.id ?? patient?.id ?? 0;
+    return 'PT-${DateTime.now().year}-${id.toString().padLeft(4, '0')}';
+  }
+
+  String get formattedDate {
+    final raw = appointment.value?.date ?? '';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    return DateFormat('d MMM yyyy', Get.locale?.toString()).format(parsed);
+  }
+
+  String get formattedTime {
+    final raw = appointment.value?.time ?? patient?.appointmentTime ?? '';
+    final parsed = DateTime.tryParse('2000-01-01 $raw');
+    if (parsed == null) return raw;
+    return DateFormat('hh:mm a', Get.locale?.toString()).format(parsed);
+  }
+
+  // ─── الخدمات الإضافية ───
+
+  void clearServiceName() => serviceNameController.clear();
+
+  // كل خدمة تُحفظ لحظة إضافتها، والرد يحمل الفاتورة كاملة فتُرسم منه مباشرة
+  Future<void> addItem() async {
+    final name = serviceNameController.text.trim();
+    if (name.isEmpty) {
+      showInfo('Please enter the service name'.tr);
+      return;
+    }
+
+    final price = num.tryParse(costController.text.trim());
+    if (price == null || price <= 0) {
+      showInfo('Please enter a valid cost'.tr);
+      return;
+    }
+
+    isSubmittingItem.value = true;
+    try {
+      invoice.value = await repo.addAddition(
+        appointmentId,
+        itemName: name,
+        price: price,
+      );
+      serviceNameController.clear();
+      costController.clear();
+    } catch (e) {
+      handleError(e);
+    } finally {
+      isSubmittingItem.value = false;
+    }
+  }
+
+  // لا يوجد مسار تعديل — تغيير خدمة يتم بحذفها ثم إضافتها من جديد
+  Future<void> deleteItem(AdditionModel addition) async {
+    if (deletingAdditionId.value != null) return;
+    deletingAdditionId.value = addition.id;
+    try {
+      invoice.value = await repo.deleteAddition(addition.id);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      deletingAdditionId.value = null;
+    }
+  }
+
+  // الخدمات تُحفظ لحظة إضافتها، فهذا الزر إغلاق للشاشة لا حفظ —
+  // ويمنع الخروج بخدمة مكتوبة لم تُضَف حتى لا تضيع دون أن يشعر الطبيب.
+  void closeInvoice() {
+    final hasPendingItem =
+        serviceNameController.text.trim().isNotEmpty ||
+        costController.text.trim().isNotEmpty;
+    if (hasPendingItem) {
+      showInfo('Please add the service or clear the fields'.tr);
+      return;
+    }
+    Get.back();
+  }
+
+  @override
+  void onClose() {
+    serviceNameController.dispose();
+    costController.dispose();
+    super.onClose();
+  }
+}
+
+```
+
+### File: lib\controllers\patients\medical_file_controller.dart
+```dart
+import 'package:get/get.dart';
+import '../../core/repos/patients/medical_file_repo.dart';
+import '../../models/patients/medical_file_model.dart';
+import '../base_controller.dart';
+
+class MedicalFileController extends BaseController {
+  final MedicalFileRepo repo;
+  MedicalFileController({required this.repo});
+
+  final medicalFile = Rxn<MedicalFileModel>();
+  late final int patientId;
+  final selectedTab = 0.obs;
+
+  final List<String> tabs = [
+    'Summary',
+    'Visits & Prescriptions',
+    'Growth Chart',
+    'Vaccines'
+  ];
+
+  @override
+  void onInit() {
+    super.onInit();
+    patientId = Get.arguments as int? ?? 0;
+    if (patientId != 0) {
+      fetchMedicalFile();
+    }
+  }
+
+  Future<void> fetchMedicalFile() async {
+    showLoading();
+    try {
+      final data = await repo.getFile(patientId);
+      medicalFile.value = data;
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+
+  void changeTab(int index) {
+    selectedTab.value = index;
+  }
+}
+```
+
 ### File: lib\controllers\revenue\revenue_controller.dart
 ```dart
 import 'package:flutter/material.dart';
@@ -683,7 +924,9 @@ class RevenueController extends BaseController {
 
   final monthlyRevenue = 0.0.obs;
   final totalPaidVisits = 0.obs;
-  final chartData = <double>[].obs;
+
+  /// One value per month of the current year, January → December.
+  final yearlyIncome = <double>[].obs;
 
   @override
   void onInit() {
@@ -696,7 +939,7 @@ class RevenueController extends BaseController {
     await Future.wait([
       _run(() async => monthlyRevenue.value = await repo.getMonthlyRevenue()),
       _run(() async => totalPaidVisits.value = await repo.getTotalPaidVisits()),
-      _run(() async => chartData.assignAll(await repo.getRevenueChartData())),
+      _run(() async => yearlyIncome.assignAll(await repo.getYearlyIncome())),
     ]);
     hideLoading();
   }
@@ -879,27 +1122,37 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../core/repos/settings/doctor_availability_repo.dart';
+import '../../models/settings/availability_item_model.dart';
 import '../base_controller.dart';
-
-
+import '../home/home_controller.dart';
 
 class DoctorAvailabilityController extends BaseController {
   final DoctorAvailabilityRepo repo;
+
   DoctorAvailabilityController({required this.repo});
 
-  // أيام الأسبوع بالإنجليزية لإرسالها للباك إند
+  final availabilitiesList = <AvailabilityItemModel>[].obs;
+  final isFetching = true.obs;
+
   final List<String> apiDays = [
-    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
   ];
-
-  // اليوم المختار حالياً (افتراضياً الإثنين)
   final selectedDay = 'monday'.obs;
-
-  // أوقات الدوام كـ TimeOfDay لتسهيل التعامل مع الـ Native Pickers
   final startTime = const TimeOfDay(hour: 12, minute: 0).obs;
   final endTime = const TimeOfDay(hour: 17, minute: 0).obs;
 
-  // دالتين مساعِدتين لتحويل الوقت لصيغة HH:mm المناسبة للـ Validation في لارافيل
+  @override
+  void onInit() {
+    super.onInit();
+    fetchAvailabilities();
+  }
+
   String _formatTimeOfDay(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
@@ -907,9 +1160,9 @@ class DoctorAvailabilityController extends BaseController {
   }
 
   String get formattedStartTime => _formatTimeOfDay(startTime.value);
+
   String get formattedEndTime => _formatTimeOfDay(endTime.value);
 
-  // فتح الـ Time Picker للمستخدم
   Future<void> pickTime(BuildContext context, bool isStartTime) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -924,7 +1177,36 @@ class DoctorAvailabilityController extends BaseController {
     }
   }
 
-  // إرسال الطلب وحفظ الدوام
+  Future<void> fetchAvailabilities() async {
+    isFetching.value = true;
+    try {
+      int doctorId = 0;
+      if (Get.isRegistered<HomeController>()) {
+        doctorId = Get.find<HomeController>().doctorData.value?.id ?? 0;
+      }
+
+      final data = await repo.getAvailabilities(doctorId);
+      availabilitiesList.assignAll(data);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      isFetching.value = false;
+    }
+  }
+
+  Future<void> deleteDay(int id) async {
+    showLoading();
+    try {
+      final msg = await repo.deleteAvailability(id);
+      availabilitiesList.removeWhere((item) => item.id == id);
+      showSuccess(msg);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+
   Future<void> saveWorkingHours() async {
     showLoading();
     try {
@@ -934,28 +1216,40 @@ class DoctorAvailabilityController extends BaseController {
         endTime: formattedEndTime,
       );
 
-      showSuccess(result.message.isNotEmpty ? result.message : 'Working hours added successfully.'.tr);
+      showSuccess(
+        result.message.isNotEmpty
+            ? result.message
+            : 'Working hours added successfully.'.tr,
+      );
 
-      // العودة للشاشة السابقة بعد ثانية ونصف تلقائياً
-      Future.delayed(const Duration(milliseconds: 1500), () => Get.back());
+      Get.back();
+      fetchAvailabilities();
     } catch (e) {
-      handleError(e); // سيتكفل بعرض الـ Snackbar الحمراء في حال التضارب 422
+      handleError(e);
     } finally {
       hideLoading();
     }
   }
+
 }
+
 ```
 
 ### File: lib\controllers\settings\settings_controller.dart
 ```dart
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
 import '../../core/helper/secure_storage_service.dart';
 import '../../core/repos/home/home_repo.dart';
+import '../../core/repos/settings/doctor_availability_repo.dart';
 import '../base_controller.dart';
 
 class SettingsController extends BaseController {
+  final DoctorAvailabilityRepo repo;
+
+  SettingsController({required this.repo});
+
   void goToAvailabilities() {
     Get.toNamed('/doctor_availability');
   }
@@ -1045,30 +1339,46 @@ class SettingsController extends BaseController {
     Get.updateLocale(targetLocale);
   }
 
-
   void deleteAccount() {
     Get.dialog(
       AlertDialog(
         backgroundColor: Get.theme.cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Account'.tr, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to permanently delete your account? This action cannot be undone.'.tr),
+        title: Text(
+          'Delete Account'.tr,
+          style: const TextStyle(
+            color: Colors.red,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to permanently delete your account? This action cannot be undone.'
+              .tr,
+        ),
         actions: [
           TextButton(
             onPressed: () => Get.back(),
-            child: Text('Cancel'.tr, style: TextStyle(color: Get.theme.hintColor)),
+            child: Text(
+              'Cancel'.tr,
+              style: TextStyle(color: Get.theme.hintColor),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red.shade800,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () async {
               Get.back();
               await _confirmDeleteAccount();
             },
-            child: Text('Delete'.tr, style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              'Delete'.tr,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -1078,15 +1388,74 @@ class SettingsController extends BaseController {
   Future<void> _confirmDeleteAccount() async {
     showLoading();
     try {
-
       final homeRepo = Get.find<HomeRepo>();
       final msg = await homeRepo.deleteDoctorAccount();
 
       showSuccess(msg);
 
-
       await SecureStorage.removeAll();
       Get.offAllNamed('/login');
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+
+  Future<void> pickDateToCancelAppointments(BuildContext context) async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Get.theme.primaryColor,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (pickedDate != null) {
+      String formattedDate = DateFormat('yyyy-MM-dd').format(pickedDate);
+
+      _confirmCancellationDialog(formattedDate);
+    }
+  }
+
+  void _confirmCancellationDialog(String date) {
+    Get.defaultDialog(
+      title: 'Confirm Cancellation'.tr,
+      titleStyle: const TextStyle(
+        color: Colors.red,
+        fontWeight: FontWeight.bold,
+      ),
+      middleText:
+          '${'Are you sure you want to cancel all appointments for today '.tr}$date?',
+      textConfirm: 'Confirm Cancellation'.tr,
+      textCancel: 'Back'.tr,
+      confirmTextColor: Colors.white,
+      buttonColor: Colors.red,
+      cancelTextColor: Get.theme.primaryColor,
+      onConfirm: () {
+        Get.back();
+        _executeCancellation(date);
+      },
+    );
+  }
+
+  Future<void> _executeCancellation(String date) async {
+    showLoading();
+    try {
+      final message = await repo.deleteAppointmentsByDate(date);
+      showSuccess(message);
     } catch (e) {
       handleError(e);
     } finally {
@@ -1361,6 +1730,92 @@ class HomeApi {
 }
 ```
 
+### File: lib\core\apis\invoice\invoice_api.dart
+```dart
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:get/get.dart';
+import '../../constants.dart';
+import '../../helper/secure_storage_service.dart';
+
+class InvoiceApi {
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await SecureStorage.getToken();
+    final String currentLocale = Get.locale?.languageCode ?? 'en';
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Language': currentLocale,
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  // تفاصيل الموعد — منها تُقرأ أجرة الكشف والعملة (لا يوجد مسار مستقل للأجرة)
+  Future<http.Response> getAppointment(int appointmentId) async {
+    return await http
+        .get(
+          Uri.parse('$baseUrl/api/doctor/appointments/$appointmentId'),
+          headers: await _getHeaders(),
+        )
+        .timeout(const Duration(seconds: 15));
+  }
+
+  // إضافة خدمة واحدة — لا يوجد إرسال جماعي، فكل خدمة نداء مستقل
+  Future<http.Response> addAddition(
+    int appointmentId, {
+    required String itemName,
+    required num price,
+  }) async {
+    return await http
+        .post(
+          Uri.parse('$baseUrl/api/doctor/$appointmentId/additions'),
+          headers: await _getHeaders(),
+          body: jsonEncode({'item_name': itemName, 'price': price}),
+        )
+        .timeout(const Duration(seconds: 15));
+  }
+
+  // حذف خدمة — تنبيه: المعرف في المسار هو معرف الإضافة (additions[].id)
+  // وليس معرف الموعد، خلافاً لبقية مسارات هذا التدفق.
+  Future<http.Response> deleteAddition(int additionId) async {
+    return await http
+        .delete(
+          Uri.parse('$baseUrl/api/doctor/$additionId/additions'),
+          headers: await _getHeaders(),
+        )
+        .timeout(const Duration(seconds: 15));
+  }
+}
+
+```
+
+### File: lib\core\apis\patients\medical_file_api.dart
+```dart
+import 'package:http/http.dart' as http;
+import 'package:get/get.dart';
+import '../../constants.dart';
+import '../../helper/secure_storage_service.dart';
+
+class MedicalFileApi {
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await SecureStorage.getToken();
+    final String currentLocale = Get.locale?.languageCode ?? 'en';
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Language': currentLocale,
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<String> getMedicalFile(int patientId) async {
+    final url = Uri.parse('$baseUrl/api/doctor/patients/$patientId/medical-file');
+    final response = await http.get(url, headers: await _getHeaders());
+    return response.body;
+  }
+}
+```
+
 ### File: lib\core\apis\revenue\revenue_api.dart
 ```dart
 import 'package:http/http.dart' as http;
@@ -1387,8 +1842,14 @@ class RevenueApi {
     return (await http.get(Uri.parse('$baseUrl/api/doctor/income'), headers: await _getHeaders())).body;
   }
 
-  // TODO: implement when the backend exposes these endpoints.
-  Future<String> getRevenueChartData() async => '';
+  /// GET /api/doctor/yearlyIncome → the current year's earnings grouped by month
+  /// as a top-level array of 12 items, January → December:
+  /// `[{ "month": "January", "total_income": 0.0 }, …]`.
+  Future<String> getYearlyIncome() async {
+    return (await http.get(Uri.parse('$baseUrl/api/doctor/yearlyIncome'), headers: await _getHeaders())).body;
+  }
+
+  // TODO: implement when the backend exposes this endpoint.
   Future<String> getTotalPaidVisits() async => '';
 }
 
@@ -1495,8 +1956,6 @@ import 'package:get/get.dart';
 import '../../constants.dart';
 import '../../helper/secure_storage_service.dart';
 
-
-
 class DoctorAvailabilityApi {
   Future<Map<String, String>> _getHeaders() async {
     final token = await SecureStorage.getToken();
@@ -1509,7 +1968,6 @@ class DoctorAvailabilityApi {
     };
   }
 
-  // إرسال البيانات كـ JSON مع الحقول المطلوبة في الباك إند
   Future<http.Response> addAvailability({
     required String dayOfWeek,
     required String startTime,
@@ -1517,25 +1975,60 @@ class DoctorAvailabilityApi {
   }) async {
     final url = Uri.parse('$baseUrl/api/doctor-availabilities');
 
-    final response = await http.post(
-      url,
-      headers: await _getHeaders(),
-      body: jsonEncode({
-        'day_of_week': dayOfWeek,
-        'start_time': startTime,
-        'end_time': endTime,
-      }),
-    ).timeout(const Duration(seconds: 15));
+    final response = await http
+        .post(
+          url,
+          headers: await _getHeaders(),
+          body: jsonEncode({
+            'day_of_week': dayOfWeek,
+            'start_time': startTime,
+            'end_time': endTime,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    return response;
+  }
+
+  // GET
+  Future<http.Response> getAvailabilities(int doctorId) async {
+    return await http
+        .get(
+          Uri.parse('$baseUrl/api/doctors/$doctorId/availabilities'),
+          headers: await _getHeaders(),
+        )
+        .timeout(const Duration(seconds: 20));
+  }
+
+  // DELETE
+  Future<http.Response> deleteAvailability(int id) async {
+    return await http
+        .delete(
+          Uri.parse('$baseUrl/api/doctor/availability/$id'),
+          headers: await _getHeaders(),
+        )
+        .timeout(const Duration(seconds: 20));
+  }
+
+  Future<http.Response> deleteAppointmentsByDate( String date) async {
+    final url = Uri.parse('$baseUrl/api/doctor/appointments/cancelAppointments');
+    final response = await http
+        .put(
+          url,
+          headers: await _getHeaders(),
+          body: jsonEncode({'date': date}),
+        )
+        .timeout(const Duration(seconds: 20));
 
     return response;
   }
 }
+
 ```
 
 ### File: lib\core\constants.dart
 ```dart
-const String baseUrl = 'https://deputize-daylong-puritan.ngrok-free.dev';
-//const String baseUrl = 'http://192.168.1.6:8000';
+const String baseUrl = 'https://kidcare.sy';
 
 String token = '';
 
@@ -1615,6 +2108,29 @@ class AppTranslations extends Translations {
       'Success': 'Success',
       'Error': 'Error',
 
+      //patients
+      'Medical File': 'Medical File',
+      'Summary': 'Summary',
+      'Visits & Prescriptions': 'Visits & Prescriptions',
+      'Growth Chart': 'Growth Chart',
+      'Vaccines': 'Vaccines',
+      'Weight': 'Weight',
+      'Height': 'Height',
+      'Blood Type': 'Blood Type',
+      'Allergies': 'Allergies',
+      'kg': 'kg',
+      'cm': 'cm',
+      'normal': 'Normal',
+      'None': 'None',
+      'Last Visit': 'Last Visit',
+      'Diagnosis': 'Diagnosis',
+      'Previous Visits': 'Previous Visits',
+      'View All Visits': 'View All Visits',
+      'Under Construction': 'Under Construction',
+      'Common Cold': 'Common Cold',
+      'High Fever': 'High Fever',
+      'Chest Allergy': 'Chest Allergy',
+
       //schedule
       'Appointments Schedule': 'Appointments Schedule',
       'All': 'All',
@@ -1679,15 +2195,26 @@ class AppTranslations extends Translations {
       // --- Revenue View ---
       'Wallet': 'Wallet',
       'Total Monthly Income': 'Total Monthly Income',
-      'SAR': 'SAR',
+      'USD': 'USD',
       'Total Paid Visits': 'Total Paid Visits',
       'Visit': 'Visit',
-      'Revenue Overview': 'Revenue Overview',
+      'Yearly Income': 'Yearly Income',
       'Recent Transactions': 'Recent Transactions',
       'View All Transactions': 'View All Transactions',
       'No transactions yet': 'No transactions yet',
       'No data': 'No data',
+      'Jan': 'Jan',
+      'Feb': 'Feb',
+      'Mar': 'Mar',
+      'Apr': 'Apr',
       'May': 'May',
+      'Jun': 'Jun',
+      'Jul': 'Jul',
+      'Aug': 'Aug',
+      'Sep': 'Sep',
+      'Oct': 'Oct',
+      'Nov': 'Nov',
+      'Dec': 'Dec',
 
       // --- Examination View ---
       'Patient Examination': 'Patient Examination',
@@ -1727,6 +2254,27 @@ class AppTranslations extends Translations {
       'Please save the diagnosis first': 'Please save the diagnosis first',
       'Please complete all medication fields':
           'Please complete all medication fields',
+
+      // --- Invoice View ---
+      'Invoice': 'Invoice',
+      'New Invoice': 'New Invoice',
+      'Patient ID': 'Patient ID',
+      // مفتاح 'Consultation Fee' معرَّف أصلاً في قسم لوحة التحكم أعلاه
+      'General Consultation': 'General Consultation',
+      'Extra Services': 'Extra Services',
+      'Add Item': 'Add Item',
+      'Service Name': 'Service Name',
+      'e.g. Nebulizer session': 'e.g. Nebulizer session',
+      'Cost': 'Cost',
+      'Clear': 'Clear',
+      'No extra services added': 'No extra services added',
+      'Total Amount': 'Total Amount',
+      'Please enter the service name': 'Please enter the service name',
+      'Please enter a valid cost': 'Please enter a valid cost',
+      'Please add the service or clear the fields':
+          'Please add the service or clear the fields',
+      'Patient data is not loaded yet': 'Patient data is not loaded yet',
+      'Loading...': 'Loading...',
 
       // --- Settings Section (New) ---
       'Working Settings': 'Working Settings',
@@ -1787,6 +2335,10 @@ class AppTranslations extends Translations {
           'Are you sure you want to permanently delete your account? This action cannot be undone.',
       'Delete': 'Delete',
       'Continue': 'Continue',
+      'Are you sure you want to delete this working day?': 'Are you sure you want to delete this working day?',
+      'Deleted successfully': 'Deleted successfully',
+      'Cannot delete this availability': 'Cannot delete this availability',
+      'Server error': 'Server error',
     },
 
     // القاموس العربي
@@ -1803,6 +2355,29 @@ class AppTranslations extends Translations {
       'Login': 'تسجيل الدخول',
       'Success': 'نجاح',
       'Error': 'خطأ',
+
+      //patients
+      'Medical File': 'الملف الطبي',
+      'Summary': 'الملخص',
+      'Visits & Prescriptions': 'الزيارات والوصفات',
+      'Growth Chart': 'منحنى النمو',
+      'Vaccines': 'اللقاحات',
+      'Weight': 'الوزن',
+      'Height': 'الطول',
+      'Blood Type': 'فصيلة الدم',
+      'Allergies': 'الحساسية',
+      'kg': 'كجم',
+      'cm': 'سم',
+      'normal': 'طبيعي',
+      'None': 'لا يوجد',
+      'Last Visit': 'آخر زيارة',
+      'Diagnosis': 'تشخيص',
+      'Previous Visits': 'الزيارات السابقة',
+      'View All Visits': 'عرض جميع الزيارات',
+      'Under Construction': 'قيد التطوير',
+      'Common Cold': 'نزلة برد',
+      'High Fever': 'ارتفاع في الحرارة',
+      'Chest Allergy': 'حساسية صدرية',
 
       //schedule
       'Appointments Schedule': 'جدول المواعيد',
@@ -1867,15 +2442,26 @@ class AppTranslations extends Translations {
       // --- Revenue View ---
       'Wallet': 'المحفظة',
       'Total Monthly Income': 'إجمالي الدخل الشهري',
-      'SAR': 'ريال',
+      'USD': 'دولار',
       'Total Paid Visits': 'إجمالي الزيارات المدفوعة',
       'Visit': 'زيارة',
-      'Revenue Overview': 'نظرة عامة على الإيرادات',
+      'Yearly Income': 'الدخل السنوي',
       'Recent Transactions': 'أحدث المعاملات',
       'View All Transactions': 'عرض جميع المعاملات',
       'No transactions yet': 'لا توجد معاملات بعد',
       'No data': 'لا توجد بيانات',
+      'Jan': 'يناير',
+      'Feb': 'فبراير',
+      'Mar': 'مارس',
+      'Apr': 'أبريل',
       'May': 'مايو',
+      'Jun': 'يونيو',
+      'Jul': 'يوليو',
+      'Aug': 'أغسطس',
+      'Sep': 'سبتمبر',
+      'Oct': 'أكتوبر',
+      'Nov': 'نوفمبر',
+      'Dec': 'ديسمبر',
 
       // --- Examination View ---
       'Patient Examination': 'معاينة المريض',
@@ -1913,6 +2499,27 @@ class AppTranslations extends Translations {
       'Please enter both height and weight': 'الرجاء إدخال الطول والوزن معاً',
       'Please save the diagnosis first': 'الرجاء حفظ التشخيص أولاً',
       'Please complete all medication fields': 'الرجاء إكمال جميع حقول الدواء',
+
+      // --- Invoice View ---
+      'Invoice': 'الفاتورة',
+      'New Invoice': 'فاتورة جديدة',
+      'Patient ID': 'معرف المريض',
+      // مفتاح 'Consultation Fee' معرَّف أصلاً في قسم لوحة التحكم أعلاه
+      'General Consultation': 'كشف عام',
+      'Extra Services': 'خدمات إضافية',
+      'Add Item': 'إضافة خدمة',
+      'Service Name': 'اسم الخدمة',
+      'e.g. Nebulizer session': 'مثال: جلسة بخّار',
+      'Cost': 'التكلفة',
+      'Clear': 'مسح',
+      'No extra services added': 'لا توجد خدمات إضافية',
+      'Total Amount': 'المبلغ الإجمالي',
+      'Please enter the service name': 'الرجاء إدخال اسم الخدمة',
+      'Please enter a valid cost': 'الرجاء إدخال تكلفة صحيحة',
+      'Please add the service or clear the fields':
+          'الرجاء إضافة الخدمة أو إفراغ الحقول',
+      'Patient data is not loaded yet': 'لم يتم تحميل بيانات المريض بعد',
+      'Loading...': 'جارٍ التحميل...',
 
       // --- Settings Section (New) ---
       'Working Settings': 'إعدادات العمل',
@@ -1972,6 +2579,10 @@ class AppTranslations extends Translations {
           'هل أنت متأكد أنك تريد حذف حسابك نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.',
       'Delete': 'حذف',
       'Continue': 'متابعة',
+      'Are you sure you want to delete this working day?': 'هل أنت متأكد من حذف وقت الدوام هذا؟',
+      'Deleted successfully': 'تم الحذف بنجاح',
+      'Cannot delete this availability': 'لا يمكن حذف وقت الدوام هذا',
+      'Server error': 'خطأ في الخادم',
     },
   };
 }
@@ -2223,6 +2834,85 @@ class HomeRepo {
 }
 ```
 
+### File: lib\core\repos\invoice\invoice_repo.dart
+```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../../models/invoice/invoice_model.dart';
+import '../../apis/invoice/invoice_api.dart';
+
+class InvoiceRepo {
+  final InvoiceApi api;
+  InvoiceRepo({required this.api});
+
+  String _cleanJson(String response) {
+    if (response.contains('{')) return response.substring(response.indexOf('{'));
+    if (response.contains('[')) return response.substring(response.indexOf('['));
+    return response;
+  }
+
+  // الإضافة ترجع 201 لا 200، لذا يُقبل نطاق 2xx كاملاً.
+  // عند الفشل يُرمى نص الجسم كما هو ليستخرج handleError رسالة الخادم منه.
+  Map<String, dynamic> _decode(http.Response response) {
+    final cleaned = _cleanJson(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(cleaned);
+    }
+    return jsonDecode(cleaned) as Map<String, dynamic>;
+  }
+
+  Future<AppointmentInvoiceModel> getAppointment(int appointmentId) async {
+    final decoded = _decode(await api.getAppointment(appointmentId));
+    return AppointmentInvoiceModel.fromJson(decoded['data'] ?? {});
+  }
+
+  Future<InvoiceModel> addAddition(
+    int appointmentId, {
+    required String itemName,
+    required num price,
+  }) async {
+    final decoded = _decode(
+      await api.addAddition(appointmentId, itemName: itemName, price: price),
+    );
+    return InvoiceModel.fromJson(decoded['appointment'] ?? {});
+  }
+
+  Future<InvoiceModel> deleteAddition(int additionId) async {
+    final decoded = _decode(await api.deleteAddition(additionId));
+    return InvoiceModel.fromJson(decoded['appointment'] ?? {});
+  }
+}
+
+```
+
+### File: lib\core\repos\patients\medical_file_repo.dart
+```dart
+import 'dart:convert';
+import '../../../models/patients/medical_file_model.dart';
+import '../../apis/patients/medical_file_api.dart';
+
+class MedicalFileRepo {
+  final MedicalFileApi api;
+  MedicalFileRepo({required this.api});
+
+  Future<MedicalFileModel> getFile(int id) async {
+    final res = await api.getMedicalFile(id);
+
+    String cleanRes = res;
+    if (cleanRes.contains('{')) {
+      cleanRes = cleanRes.substring(cleanRes.indexOf('{'));
+    }
+
+    final decoded = jsonDecode(cleanRes);
+    if (decoded['status'] == true && decoded['data'] != null) {
+      return MedicalFileModel.fromJson(decoded['data']);
+    } else {
+      throw Exception(decoded['message'] ?? 'Failed to fetch medical file');
+    }
+  }
+}
+```
+
 ### File: lib\core\repos\revenue\revenue_repo.dart
 ```dart
 import 'dart:convert';
@@ -2246,7 +2936,30 @@ class RevenueRepo {
     return response;
   }
 
+  /// Month names exactly as the backend spells them. They come back in English
+  /// even under `Accept-Language: ar`, so they are only used to sanity-check the
+  /// ordering here — the label shown to the user is derived from the index.
+  static const _monthOrder = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
   /// Current month's total earnings for the logged-in doctor.
+  ///
+  /// Independent from [getYearlyIncome]: this counts appointments whose
+  /// `payment_status` is paid, while the yearly breakdown counts appointments
+  /// whose `status` is completed. The two will often disagree for the current
+  /// month, so never derive one from the other.
   Future<double> getMonthlyRevenue() async {
     final res = await api.getMonthlyIncome();
     return double.tryParse(
@@ -2254,25 +2967,30 @@ class RevenueRepo {
         0.0;
   }
 
-  // ─── Mock data — swap these bodies for real API calls when backend is ready ──
+  /// The current year's earnings per month — always 12 values in calendar
+  /// order, January → December, with months that have no income (including
+  /// future ones) as 0.
+  Future<List<double>> getYearlyIncome() async {
+    final decoded = jsonDecode(_cleanJson(await api.getYearlyIncome()));
+    final values = List<double>.filled(12, 0.0);
+    if (decoded is! List) return values;
+
+    for (int i = 0; i < decoded.length && i < 12; i++) {
+      final item = decoded[i];
+      if (item is! Map) continue;
+      // Trust the month name when we recognise it, fall back to the position.
+      final month = _monthOrder.indexOf(item['month']?.toString() ?? '');
+      values[month == -1 ? i : month] =
+          double.tryParse(item['total_income']?.toString() ?? '') ?? 0.0;
+    }
+    return values;
+  }
+
+  // ─── Mock data — swap this body for a real API call when backend is ready ───
 
   Future<int> getTotalPaidVisits() async {
     // await api.getTotalPaidVisits();
     return 156;
-  }
-
-  /// Revenue values for the chart (one per day of the month).
-  /// Fluctuates up and down while trending upward, peaking at the 15,600
-  /// monthly total shown in the header.
-  Future<List<double>> getRevenueChartData() async {
-    // await api.getRevenueChartData();
-    return [
-      1500, 3200, 2400, 4800, 3600, 6200, 4500,
-      7400, 5800, 8600, 6900, 9800, 7600, 10900,
-      8400, 11800, 9200, 12600, 10100, 13400, 10800,
-      14100, 11500, 14800, 12200, 13600, 12900, 14500,
-      15600,
-    ];
   }
 }
 
@@ -2391,13 +3109,15 @@ class ScheduleRepo {
 ```dart
 import 'dart:convert';
 
+import 'package:get/get.dart';
+
+import '../../../models/settings/availability_item_model.dart';
 import '../../../models/settings/doctor_availability_model.dart';
 import '../../apis/settings/doctor_availability_api.dart';
 
-
-
 class DoctorAvailabilityRepo {
   final DoctorAvailabilityApi api;
+
   DoctorAvailabilityRepo({required this.api});
 
   String _cleanJson(String response) {
@@ -2421,9 +3141,10 @@ class DoctorAvailabilityRepo {
     final cleanedBody = _cleanJson(response.body);
     final Map<String, dynamic> decodedJson = jsonDecode(cleanedBody);
 
-    // ─── التقاط خطأ التضارب 422 الموضح في البوست مان وتمريره للـ BaseController ───
     if (response.statusCode == 422 || response.statusCode == 400) {
-      throw Exception(decodedJson['message'] ?? 'Time conflict or invalid data.');
+      throw Exception(
+        decodedJson['message'] ?? 'Time conflict or invalid data.',
+      );
     }
 
     if (response.statusCode != 200 && response.statusCode != 201) {
@@ -2432,7 +3153,69 @@ class DoctorAvailabilityRepo {
 
     return DoctorAvailabilityModel.fromJson(decodedJson);
   }
+
+  Future<List<AvailabilityItemModel>> getAvailabilities(int doctorId) async {
+    final response = await api.getAvailabilities(doctorId);
+    final decodedJson = jsonDecode(_cleanJson(response.body));
+
+    if (response.statusCode == 200) {
+      final List data = decodedJson['data'] ?? [];
+      return data.map((e) => AvailabilityItemModel.fromJson(e)).toList();
+    } else {
+      throw Exception(
+        decodedJson['message'] ?? 'Failed to load availabilities',
+      );
+    }
+  }
+
+  Future<String> deleteAvailability(int id) async {
+    final response = await api.deleteAvailability(id);
+
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      if (response.body.isEmpty) return 'Deleted successfully'.tr;
+
+      try {
+        final decoded = jsonDecode(_cleanJson(response.body));
+        if (decoded is Map) {
+          return decoded['message']?.toString() ?? 'Deleted successfully'.tr;
+        }
+      } catch (_) {}
+      return 'Deleted successfully'.tr;
+    } else {
+      String errorMessage = '${'Server error'.tr}: ${response.statusCode}';
+
+      try {
+        final decoded = jsonDecode(_cleanJson(response.body));
+
+        if (decoded is Map && decoded['message'] != null) {
+          errorMessage = decoded['message'].toString();
+        } else if (decoded is Map && decoded['errors'] != null) {
+          errorMessage = decoded['errors'].values.first[0].toString();
+        }
+      } catch (_) {
+        if (response.statusCode == 422) {
+          errorMessage = 'Cannot delete this availability'.tr;
+        }
+      }
+
+      throw errorMessage;
+    }
+  }
+
+  Future<String> deleteAppointmentsByDate(String date) async {
+    final res = await api.deleteAppointmentsByDate(date);
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final decoded = jsonDecode(_cleanJson(res.body));
+      return decoded['message'] ?? 'Deleted successfully'.tr;
+    } else {
+      final decoded = jsonDecode(_cleanJson(res.body));
+      throw Exception(decoded['message'] ?? 'Failed to delete appointments'.tr);
+    }
+  }
+
 }
+
 ```
 
 ### File: lib\core\theme\app_themes.dart
@@ -2539,7 +3322,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/date_symbol_data_local.dart';
-
+import 'package:kidcare_pro/service/notification_service.dart';
 
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
@@ -2562,6 +3345,12 @@ import 'views/examination/examination_view.dart';
 import 'controllers/examination/examination_controller.dart';
 import 'core/apis/examination/examination_api.dart';
 import 'core/repos/examination/examination_repo.dart';
+
+// Invoice
+import 'views/invoice/new_invoice_view.dart';
+import 'controllers/invoice/invoice_controller.dart';
+import 'core/apis/invoice/invoice_api.dart';
+import 'core/repos/invoice/invoice_repo.dart';
 
 // Revenue
 
@@ -2592,13 +3381,20 @@ import 'core/apis/settings/doctor_availability_api.dart';
 import 'core/repos/auth/password_reset_repo.dart';
 import 'core/repos/settings/doctor_availability_repo.dart';
 
-void main() async {
+//patients
+import 'views/patients/medical_file_view.dart';
+import 'controllers/patients/medical_file_controller.dart';
+import 'core/apis/patients/medical_file_api.dart';
+import 'core/repos/patients/medical_file_repo.dart';
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-
-
-
   await initializeDateFormatting();
+
+  await Firebase.initializeApp();
+
+  await NotificationService.initialize();
 
   final String savedToken = await SecureStorage.getToken();
   final String initialRoute = savedToken.isNotEmpty ? '/doctor_home' : '/login';
@@ -2660,6 +3456,19 @@ class MyApp extends StatelessWidget {
           }),
         ),
         GetPage(
+          name: '/medical_file',
+          page: () => const MedicalFileView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<MedicalFileApi>(() => MedicalFileApi());
+            Get.lazyPut<MedicalFileRepo>(
+              () => MedicalFileRepo(api: Get.find()),
+            );
+            Get.lazyPut<MedicalFileController>(
+              () => MedicalFileController(repo: Get.find()),
+            );
+          }),
+        ),
+        GetPage(
           name: '/appointment_details',
           page: () => const AppointmentDetailsView(),
           binding: BindingsBuilder(() {
@@ -2672,7 +3481,7 @@ class MyApp extends StatelessWidget {
             );
           }),
         ),
-        // ─── مسار الهوم المدمج والخالي من الأخطاء ───
+
         GetPage(
           name: '/doctor_home',
           page: () => const HomeView(),
@@ -2686,23 +3495,25 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<ScheduleApi>(() => ScheduleApi());
             Get.lazyPut<ScheduleRepo>(() => ScheduleRepo(api: Get.find()));
             Get.lazyPut<ScheduleController>(
-              () => ScheduleController(repo: Get.find()),
+                  () => ScheduleController(repo: Get.find()),
             );
             Get.lazyPut<PatientsApi>(() => PatientsApi());
             Get.lazyPut<PatientsRepo>(() => PatientsRepo(api: Get.find()));
             Get.lazyPut<PatientsController>(
-              () => PatientsController(repo: Get.find()),
+                  () => PatientsController(repo: Get.find()),
             );
 
-            // Revenue (مهم جداً لحماية التبويب الثالث من الانهيار)
+            // Revenue
             Get.lazyPut<RevenueApi>(() => RevenueApi());
             Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
             Get.lazyPut<RevenueController>(
-              () => RevenueController(repo: Get.find()),
+                  () => RevenueController(repo: Get.find()),
             );
 
             // Settings
-            Get.lazyPut<SettingsController>(() => SettingsController());
+            Get.lazyPut<DoctorAvailabilityApi>(() => DoctorAvailabilityApi());
+            Get.lazyPut<DoctorAvailabilityRepo>(() => DoctorAvailabilityRepo(api: Get.find()));
+            Get.lazyPut<SettingsController>(() => SettingsController(repo: Get.find()));
           }),
         ),
         GetPage(
@@ -2741,6 +3552,17 @@ class MyApp extends StatelessWidget {
             );
             Get.lazyPut<ExaminationController>(
               () => ExaminationController(repo: Get.find()),
+            );
+          }),
+        ),
+        GetPage(
+          name: '/new_invoice',
+          page: () => const NewInvoiceView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<InvoiceApi>(() => InvoiceApi());
+            Get.lazyPut<InvoiceRepo>(() => InvoiceRepo(api: Get.find()));
+            Get.lazyPut<InvoiceController>(
+              () => InvoiceController(repo: Get.find()),
             );
           }),
         ),
@@ -2958,6 +3780,251 @@ class PatientAppointmentModel {
       gender: json['gender']?.toString() ?? '',
       image: json['image']?.toString() ?? '',
       appointmentTime: json['appointment_time']?.toString() ?? '',
+    );
+  }
+}
+```
+
+### File: lib\models\invoice\invoice_model.dart
+```dart
+// ─── نماذج الفاتورة ───
+// الفاتورة = أجرة الكشف (تُضبط عند الحجز) + خدمات إضافية اختيارية يضيفها الطبيب.
+// الباك إند يرجع الأسعار أحياناً كنص ("50.00") وأحياناً كرقم (95) لذلك تُمرَّر كلها عبر _toNum.
+
+num _toNum(dynamic value) {
+  if (value is num) return value;
+  return num.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+int _toInt(dynamic value) {
+  if (value is int) return value;
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+// تفاصيل الموعد — المصدر الوحيد لأجرة الكشف والعملة (لا يوجد مسار مستقل لها)
+class AppointmentInvoiceModel {
+  final int appointmentId;
+  final String date;
+  final String day;
+  final String time;
+  final String status;
+  final num consultationFee;
+  final String currency;
+  final String paymentStatus;
+  final InvoiceChildModel? child;
+
+  AppointmentInvoiceModel({
+    required this.appointmentId,
+    required this.date,
+    required this.day,
+    required this.time,
+    required this.status,
+    required this.consultationFee,
+    required this.currency,
+    required this.paymentStatus,
+    this.child,
+  });
+
+  factory AppointmentInvoiceModel.fromJson(Map<String, dynamic> json) {
+    return AppointmentInvoiceModel(
+      appointmentId: _toInt(json['appointment_id']),
+      date: json['date']?.toString() ?? '',
+      day: json['day']?.toString() ?? '',
+      time: json['time']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      consultationFee: _toNum(json['consultation_fee']),
+      currency: json['currency']?.toString() ?? '',
+      paymentStatus: json['payment_status']?.toString() ?? '',
+      child: json['child'] is Map<String, dynamic>
+          ? InvoiceChildModel.fromJson(json['child'])
+          : null,
+    );
+  }
+}
+
+class InvoiceChildModel {
+  final int id;
+  final String name;
+  final String image;
+  final String gender;
+  final int age;
+
+  InvoiceChildModel({
+    required this.id,
+    required this.name,
+    required this.image,
+    required this.gender,
+    required this.age,
+  });
+
+  factory InvoiceChildModel.fromJson(Map<String, dynamic> json) {
+    return InvoiceChildModel(
+      id: _toInt(json['id']),
+      name: json['name']?.toString() ?? '',
+      image: json['image']?.toString() ?? '',
+      gender: json['gender']?.toString() ?? 'male',
+      age: _toInt(json['age']),
+    );
+  }
+}
+
+// خدمة إضافية واحدة — يُحفظ id لأنه المعرف المطلوب للحذف
+class AdditionModel {
+  final int id;
+  final int appointmentId;
+  final String itemName;
+  final num price;
+
+  AdditionModel({
+    required this.id,
+    required this.appointmentId,
+    required this.itemName,
+    required this.price,
+  });
+
+  factory AdditionModel.fromJson(Map<String, dynamic> json) {
+    return AdditionModel(
+      id: _toInt(json['id']),
+      appointmentId: _toInt(json['appointment_id']),
+      itemName: json['item_name']?.toString() ?? '',
+      price: _toNum(json['price']),
+    );
+  }
+}
+
+// الفاتورة الكاملة كما يرجعها الخادم بعد كل إضافة أو حذف —
+// ترسم الشاشة منها مباشرة دون إعادة جلب.
+class InvoiceModel {
+  final int appointmentId;
+  final num appointmentPrice;
+  final List<AdditionModel> additions;
+  final num totalAdditions;
+  final num finalPrice;
+
+  InvoiceModel({
+    required this.appointmentId,
+    required this.appointmentPrice,
+    required this.additions,
+    required this.totalAdditions,
+    required this.finalPrice,
+  });
+
+  factory InvoiceModel.fromJson(Map<String, dynamic> json) {
+    final rawAdditions = json['additions'] as List? ?? [];
+    return InvoiceModel(
+      appointmentId: _toInt(json['appointment_id']),
+      appointmentPrice: _toNum(json['appointment_price']),
+      additions: rawAdditions
+          .whereType<Map<String, dynamic>>()
+          .map(AdditionModel.fromJson)
+          .toList(),
+      totalAdditions: _toNum(json['total_additions']),
+      finalPrice: _toNum(json['final_price']),
+    );
+  }
+}
+
+```
+
+### File: lib\models\patients\medical_file_model.dart
+```dart
+class MedicalFileModel {
+  final PatientInfo patientInfo;
+  final MedicalSummary summary;
+
+  MedicalFileModel({required this.patientInfo, required this.summary});
+
+  factory MedicalFileModel.fromJson(Map<String, dynamic> json) {
+    return MedicalFileModel(
+      patientInfo: PatientInfo.fromJson(json['patient_info'] ?? {}),
+      summary: MedicalSummary.fromJson(json['summary'] ?? {}),
+    );
+  }
+}
+
+class PatientInfo {
+  final int id;
+  final String name;
+  final int age;
+  final String gender;
+  final String fileNumber;
+  final String image;
+
+  PatientInfo({
+    required this.id,
+    required this.name,
+    required this.age,
+    required this.gender,
+    required this.fileNumber,
+    required this.image,
+  });
+
+  factory PatientInfo.fromJson(Map<String, dynamic> json) {
+    String rawImage = json['image']?.toString() ?? '';
+    if (rawImage.contains('http')) {
+      final parts = rawImage.split('8000/');
+      rawImage = parts.length > 1 ? parts.last : rawImage;
+    }
+
+    return PatientInfo(
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      name: json['name']?.toString() ?? '',
+      age: int.tryParse(json['age']?.toString() ?? '0') ?? 0,
+      gender: json['gender']?.toString() ?? 'male',
+      fileNumber: json['file_number']?.toString() ?? '',
+      image: rawImage,
+    );
+  }
+}
+
+class MedicalSummary {
+  final String weight;
+  final String weightStatus;
+  final String height;
+  final String heightStatus;
+  final String bloodType;
+  final String allergies;
+  final VisitModel? lastVisit;
+  final List<VisitModel> previousVisits;
+
+  MedicalSummary({
+    required this.weight,
+    required this.weightStatus,
+    required this.height,
+    required this.heightStatus,
+    required this.bloodType,
+    required this.allergies,
+    this.lastVisit,
+    required this.previousVisits,
+  });
+
+  factory MedicalSummary.fromJson(Map<String, dynamic> json) {
+    var previousList = json['previous_visits'] as List? ?? [];
+    return MedicalSummary(
+      weight: json['weight']?.toString() ?? '',
+      weightStatus: json['weight_status']?.toString() ?? '',
+      height: json['height']?.toString() ?? '',
+      heightStatus: json['height_status']?.toString() ?? '',
+      bloodType: json['blood_type']?.toString() ?? '',
+      allergies: json['allergies']?.toString() ?? '',
+      lastVisit: json['last_visit'] != null ? VisitModel.fromJson(json['last_visit']) : null,
+      previousVisits: previousList.map((e) => VisitModel.fromJson(e)).toList(),
+    );
+  }
+}
+
+class VisitModel {
+  final String date;
+  final String doctorName;
+  final String diagnosis;
+
+  VisitModel({required this.date, required this.doctorName, required this.diagnosis});
+
+  factory VisitModel.fromJson(Map<String, dynamic> json) {
+    return VisitModel(
+      date: json['date']?.toString() ?? '',
+      doctorName: json['doctor_name']?.toString() ?? '',
+      diagnosis: json['diagnosis']?.toString() ?? '',
     );
   }
 }
@@ -3219,6 +4286,42 @@ class ScheduleAppointmentModel {
 }
 ```
 
+### File: lib\models\settings\availability_item_model.dart
+```dart
+class AvailabilityItemModel {
+  final int id;
+  final int doctorId;
+  final String dayOfWeek;
+  final String startTime;
+  final String endTime;
+
+  AvailabilityItemModel({
+    required this.id,
+    required this.doctorId,
+    required this.dayOfWeek,
+    required this.startTime,
+    required this.endTime,
+  });
+
+  factory AvailabilityItemModel.fromJson(Map<String, dynamic> json) {
+    // دالة مساعدة لقص الثواني من الوقت القادم من لارافيل
+    String formatTime(String time) {
+      if (time.length >= 5) return time.substring(0, 5);
+      return time;
+    }
+
+    return AvailabilityItemModel(
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      doctorId: int.tryParse(json['doctor_id']?.toString() ?? '0') ?? 0,
+      dayOfWeek: json['day_of_week']?.toString() ?? '',
+      startTime: formatTime(json['start_time']?.toString() ?? ''),
+      endTime: formatTime(json['end_time']?.toString() ?? ''),
+    );
+  }
+}
+
+```
+
 ### File: lib\models\settings\doctor_availability_model.dart
 ```dart
 class DoctorAvailabilityModel {
@@ -3242,6 +4345,213 @@ class DoctorAvailabilityModel {
     );
   }
 }
+```
+
+### File: lib\service\notification_service.dart
+```dart
+import 'dart:developer';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:get/get.dart';
+import 'package:http/http.dart' as http;
+
+import '../core/constants.dart';
+import '../core/helper/secure_storage_service.dart';
+import '../controllers/home/home_controller.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  log(
+    "📩 إشعار جديد في الخلفية للطبيب (Background/Terminated): ${message.messageId}",
+  );
+}
+
+class NotificationService {
+  static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  static final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  static const AndroidNotificationChannel _appointmentsChannel =
+      AndroidNotificationChannel(
+        'doctor_appointments_channel', // channelId
+        'Appointments Notifications', // channelName
+        description: 'This channel is used for new or cancelled appointments.',
+        importance: Importance.max,
+        playSound: true,
+      );
+
+  static Future<void> initialize() async {
+    // 1. طلب الصلاحيات
+    NotificationSettings settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      log("🔔 تم منح صلاحيات الإشعارات بنجاح من قبل الطبيب.");
+    }
+
+    // 2. إنشاء الإشعارات  بالأندرويد
+    await _localNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(_appointmentsChannel);
+
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initializationSettings =
+        InitializationSettings(android: initializationSettingsAndroid);
+
+    // 3. تهيئة Local Notifications
+    await _localNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        if (response.payload != null) {
+          _handleNotificationClick(response.payload!);
+        }
+      },
+    );
+
+    // 4. معالجة الإشعارات في الخلفية
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // 5. استلام الإشعارات أثناء فتح التطبيق (Foreground)
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      log(
+        "📥 استلام إشعار حي وتطبيق الطبيب مفتوح: ${message.notification?.title}",
+      );
+      _showLocalNotification(message);
+    });
+
+    // 6. النقر على الإشعار والتطبيق في الخلفية
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      log("🖱️ تم النقر على الإشعار وتطبيق الطبيب بالخلفية: ${message.data}");
+      if (message.data.containsKey('type')) {
+        _handleNotificationClick(message.data['type'].toString());
+      }
+    });
+
+    // 7. النقر على الإشعار والتطبيق مغلق تماماً (Terminated)
+    RemoteMessage? initialMessage = await _messaging.getInitialMessage();
+    if (initialMessage != null && initialMessage.data.containsKey('type')) {
+      log("🚀 إقلاع تطبيق الطبيب من الصفر بنقرة إشعار: ${initialMessage.data}");
+      _handleNotificationClick(initialMessage.data['type'].toString());
+    }
+  }
+
+  // 8. جلب التوكن وإرساله للسيرفر
+  static Future<void> sendFCMTokenToServer() async {
+    try {
+      String? fcmToken = await _messaging.getToken();
+      if (fcmToken != null && fcmToken.isNotEmpty) {
+        log("🔑 🔑 🔑 DOCTOR DEVICE FCM TOKEN = $fcmToken");
+
+        String doctorToken = await SecureStorage.getToken();
+        if (doctorToken.isEmpty || doctorToken == 'null') {
+          log("⚠️ لم يتم إرسال FCM Token لأن الطبيب لم يسجل دخوله بعد.");
+          return;
+        }
+
+        final response = await http.post(
+          Uri.parse('$baseUrl/api/doctor/save-fcm-token'),
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $doctorToken',
+          },
+          body: {'fcm_token': fcmToken},
+        );
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          log("✅ تم حفظ الـ FCM Token للطبيب في الباك إند بنجاح!");
+        } else {
+          log("⚠️ الباك إند رفض التوكن (تأكد من الـ Route): ${response.body}");
+        }
+      }
+    } catch (e) {
+      log("❌ فشل توليد الـ FCM Token للطبيب: $e");
+    }
+  }
+
+  // static Future<void> _saveTokenToBackend(String fcmToken) async {
+  //   try {
+  //     String doctorToken = await SecureStorage.getToken();
+  //
+  //
+  //     if (doctorToken.isEmpty) return;
+  //
+  //
+  //     final response = await http.post(
+  //       Uri.parse('$baseUrl/api/doctor/save-fcm-token'),
+  //       headers: {
+  //         'Accept': 'application/json',
+  //         'Authorization': 'Bearer $doctorToken',
+  //       },
+  //       body: {'fcm_token': fcmToken},
+  //     );
+  //
+  //     if (response.statusCode == 200 || response.statusCode == 201) {
+  //       log("✅ تم حفظ الـ FCM Token للطبيب في الباك إند بنجاح!");
+  //     } else {
+  //       log("⚠️ فشل حفظ التوكن للطبيب في الباك إند: ${response.body}");
+  //     }
+  //   } catch (e) {
+  //     log("❌ خطأ أثناء إرسال توكن الطبيب للسيرفر: $e");
+  //   }
+  // }
+
+  static void _showLocalNotification(RemoteMessage message) {
+    RemoteNotification? notification = message.notification;
+    AndroidNotification? android = message.notification?.android;
+
+    if (notification != null && android != null) {
+      String notificationType = message.data['type']?.toString() ?? 'general';
+
+      _localNotificationsPlugin.show(
+        notification.hashCode,
+        notification.title,
+        notification.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _appointmentsChannel.id,
+            _appointmentsChannel.name,
+            channelDescription: _appointmentsChannel.description,
+            importance: Importance.max,
+            priority: Priority.high,
+            icon: android.smallIcon,
+            //icon: '@mipmap/ic_launcher',
+            //color: const Color(0xFF00B4D8),
+            playSound: true,
+          ),
+        ),
+        payload: notificationType,
+      );
+    }
+  }
+
+  static void _handleNotificationClick(String type) {
+    log("🔀 جاري توجيه الطبيب بناءً على نوع الإشعار: $type");
+
+    if (Get.isRegistered<HomeController>()) {
+      Get.find<HomeController>().fetchAllDashboardData();
+    }
+
+    switch (type) {
+      case 'new_appointment':
+      case 'appointment_cancelled':
+        Get.toNamed('/doctor_home');
+        break;
+      default:
+        Get.toNamed('/doctor_home');
+        break;
+    }
+  }
+}
+
 ```
 
 ### File: lib\views\auth\login_view.dart
@@ -3643,10 +4953,393 @@ class _DashboardTab extends GetView<HomeController> {
 }
 ```
 
+### File: lib\views\invoice\new_invoice_view.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/invoice/invoice_controller.dart';
+import '../../widgets/custom_button.dart';
+import '../../widgets/examination/examination_fields.dart';
+import '../../widgets/invoice/consultation_fee_card.dart';
+import '../../widgets/invoice/extra_services_card.dart';
+import '../../widgets/invoice/invoice_patient_card.dart';
+import '../../widgets/invoice/invoice_summary_card.dart';
+
+// ─── شاشة الفاتورة — أجرة الكشف + خدمات إضافية اختيارية ───
+class NewInvoiceView extends GetView<InvoiceController> {
+  const NewInvoiceView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        centerTitle: true,
+        backgroundColor: context.theme.cardColor,
+        foregroundColor: context.theme.textTheme.bodyLarge?.color,
+        elevation: 0,
+        surfaceTintColor: context.theme.cardColor,
+        title: Text('New Invoice'.tr),
+      ),
+      body: SafeArea(
+        child: Obx(() {
+          // تفاصيل الموعد تحمل الأجرة، فلا معنى لرسم الفاتورة قبل وصولها
+          if (controller.isLoading && controller.appointment.value == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const InvoicePatientCard(),
+                      const SizedBox(height: 20),
+                      buildSectionTitle(context, 'Consultation Fee'.tr),
+                      const SizedBox(height: 10),
+                      const ConsultationFeeCard(),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: buildSectionTitle(
+                              context,
+                              'Extra Services'.tr,
+                            ),
+                          ),
+                          Obx(
+                            () => controller.isSubmittingItem.value
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : buildAddLink(
+                                    context,
+                                    'Add Item'.tr,
+                                    controller.addItem,
+                                  ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const ExtraServicesCard(),
+                      const SizedBox(height: 20),
+                      const InvoiceSummaryCard(),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: CustomButton(
+                  text: 'Done'.tr,
+                  onPressed: controller.closeInvoice,
+                ),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+}
+
+```
+
+### File: lib\views\patients\medical_file_view.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/patients/medical_file_controller.dart';
+import '../../core/constants.dart';
+import '../../models/patients/medical_file_model.dart';
+
+class MedicalFileView extends GetView<MedicalFileController> {
+  const MedicalFileView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: context.theme.scaffoldBackgroundColor,
+        elevation: 0,
+        centerTitle: true,
+        iconTheme: IconThemeData(color: context.theme.textTheme.bodyLarge?.color),
+        title: Text(
+          'Medical File'.tr,
+          style: context.theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        // تم إلغاء زر الثلاث نقاط من هنا
+      ),
+      body: Obx(() {
+        if (controller.isLoading) {
+          return Center(child: CircularProgressIndicator(color: context.theme.primaryColor));
+        }
+
+        final data = controller.medicalFile.value;
+        if (data == null) {
+          return Center(child: Text('No details found'.tr));
+        }
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: _buildPatientHeader(context, data.patientInfo),
+            ),
+            const SizedBox(height: 16),
+            _buildCustomTabBar(context),
+            const SizedBox(height: 16),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+                child: _buildTabContent(context, data.summary),
+              ),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _buildPatientHeader(BuildContext context, PatientInfo info) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: context.theme.primaryColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: context.theme.primaryColor.withValues(alpha: 0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 35,
+            backgroundColor: Colors.white.withValues(alpha: 0.2),
+            backgroundImage: info.image.isNotEmpty ? NetworkImage('$baseUrl/${info.image}') : null,
+            child: info.image.isEmpty ? const Icon(Icons.person, size: 35, color: Colors.white) : null,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      info.name,
+                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const Icon(Icons.calendar_today_outlined, color: Colors.white, size: 20),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${info.age} ${'Yrs'.tr} - ${info.gender.tr}',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'ID: ${info.fileNumber}',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomTabBar(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: List.generate(
+          controller.tabs.length,
+              (index) => Obx(() {
+            final isSelected = controller.selectedTab.value == index;
+            return GestureDetector(
+              onTap: () => controller.changeTab(index),
+              child: Container(
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? context.theme.primaryColor.withValues(alpha: 0.1) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  controller.tabs[index].tr,
+                  style: TextStyle(
+                    color: isSelected ? context.theme.primaryColor : context.theme.hintColor,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabContent(BuildContext context, MedicalSummary summary) {
+    return Obx(() {
+      switch (controller.selectedTab.value) {
+        case 0: // Summary
+          return _buildSummaryTab(context, summary);
+        default:
+          return Center(child: Text('Under Construction'.tr, style: TextStyle(color: context.theme.hintColor)));
+      }
+    });
+  }
+
+  Widget _buildSummaryTab(BuildContext context, MedicalSummary summary) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _buildVitalCard(context, 'Weight'.tr, '${summary.weight} ${'kg'.tr}', summary.weightStatus)),
+            const SizedBox(width: 12),
+            Expanded(child: _buildVitalCard(context, 'Height'.tr, '${summary.height} ${'cm'.tr}', summary.heightStatus)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildVitalCard(context, 'Blood Type'.tr, summary.bloodType, null)),
+            const SizedBox(width: 12),
+            Expanded(child: _buildVitalCard(context, 'Allergies'.tr, summary.allergies.tr, null)),
+          ],
+        ),
+        const SizedBox(height: 24),
+
+        // Last Visit
+        if (summary.lastVisit != null) ...[
+          Text('Last Visit'.tr, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: context.theme.cardColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.monitor_heart_outlined, color: context.theme.primaryColor, size: 28),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(summary.lastVisit!.date, style: context.theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      Text('${'Diagnosis'.tr}: ${summary.lastVisit!.diagnosis.tr}', style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+                    ],
+                  ),
+                ),
+                Text(summary.lastVisit!.doctorName, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+
+        // Previous Visits
+        Text('Previous Visits'.tr, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: context.theme.cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+          ),
+          child: Column(
+            children: [
+              ...summary.previousVisits.map((visit) => Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(visit.date, style: context.theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text(visit.diagnosis.tr, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+                      ],
+                    ),
+                    Text(visit.doctorName, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+                  ],
+                ),
+              )),
+              const Divider(),
+              TextButton(
+                onPressed: () {},
+                child: Text('View All Visits'.tr, style: TextStyle(color: context.theme.primaryColor, fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
+        ),
+        const SizedBox(height: 40),
+      ],
+    );
+  }
+
+  Widget _buildVitalCard(BuildContext context, String title, String value, String? status) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(title, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+          const SizedBox(height: 8),
+          Text(value, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          if (status != null && status.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                status.tr,
+                style: const TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ]
+        ],
+      ),
+    );
+  }
+}
+```
+
 ### File: lib\views\revenue\revenue_view.dart
 ```dart
 import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/revenue/revenue_controller.dart';
@@ -3685,8 +5378,6 @@ class RevenueView extends GetView<RevenueController> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildIncomeCard(context),
-                const SizedBox(height: 16),
-                _buildPaidVisitsCard(context),
                 const SizedBox(height: 16),
                 _buildChartCard(context),
               ],
@@ -3731,7 +5422,7 @@ class RevenueView extends GetView<RevenueController> {
                 ),
                 const SizedBox(height: 8),
                 Obx(() => Text(
-                      '${_formatThousands(controller.monthlyRevenue.value)} ${'SAR'.tr}',
+                      '${_formatThousands(controller.monthlyRevenue.value)} ${'USD'.tr}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 30,
@@ -3745,11 +5436,12 @@ class RevenueView extends GetView<RevenueController> {
           SizedBox(
             width: 90,
             height: 50,
-            child: Obx(() => controller.chartData.isEmpty
+            child: Obx(() => controller.yearlyIncome.isEmpty
                 ? const SizedBox.shrink()
                 : CustomPaint(
                     painter: _LineChartPainter(
-                      data: controller.chartData,
+                      data: controller.yearlyIncome.toList(),
+                      plotCount: _elapsedMonths(controller.yearlyIncome.length),
                       lineColor: Colors.white,
                       showDots: false,
                       showGrid: false,
@@ -3764,33 +5456,6 @@ class RevenueView extends GetView<RevenueController> {
 
   // ─── White paid-visits card ───────────────────────────────────────────────
 
-  Widget _buildPaidVisitsCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Total Paid Visits'.tr,
-            style: TextStyle(
-              color: context.theme.hintColor,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Obx(() => Text(
-                '${controller.totalPaidVisits.value} ${'Visit'.tr}',
-                style: context.theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                ),
-              )),
-        ],
-      ),
-    );
-  }
 
   // ─── White chart card (title + tooltip inside) ────────────────────────────
 
@@ -3805,7 +5470,7 @@ class RevenueView extends GetView<RevenueController> {
           Padding(
             padding: const EdgeInsets.only(left: 8),
             child: Text(
-              'Revenue Overview'.tr,
+              'Yearly Income'.tr,
               style: context.theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
@@ -3823,14 +5488,20 @@ class RevenueView extends GetView<RevenueController> {
   }
 
   Widget _buildLineChart(BuildContext context) {
-    final data = controller.chartData;
+    final data = controller.yearlyIncome.toList();
     if (data.isEmpty) {
       return Center(
         child: Text('No data'.tr, style: TextStyle(color: context.theme.hintColor)),
       );
     }
 
-    final dataMax = data.reduce((a, b) => a > b ? a : b);
+    // The API always returns all 12 months, with the ones still ahead of us as
+    // 0. Plotting those would draw the year falling off a cliff, so the line
+    // stops at the current month while the axis keeps its full 12 slots.
+    final plotCount = _elapsedMonths(data.length);
+    final plotted = data.take(plotCount);
+    final dataMax = plotted.reduce((a, b) => a > b ? a : b);
+    final peakMonth = data.indexOf(dataMax);
     // Round the axis ceiling up to a "nice" value so labels read 5K / 10K / 15K / 20K.
     final axisMax = _niceCeil(dataMax);
     final step = axisMax / 4;
@@ -3846,7 +5517,7 @@ class RevenueView extends GetView<RevenueController> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                'SAR'.tr,
+                'USD'.tr,
                 style: TextStyle(fontSize: 8, color: context.theme.hintColor),
               ),
               ...List.generate(5, (i) {
@@ -3870,12 +5541,14 @@ class RevenueView extends GetView<RevenueController> {
                   size: Size.infinite,
                   painter: _LineChartPainter(
                     data: data,
+                    plotCount: plotCount,
                     lineColor: context.theme.primaryColor,
                     showDots: true,
                     showGrid: true,
                     fillOpacity: 0.08,
-                    tooltip: '${_formatThousands(dataMax)} ${'SAR'.tr}',
+                    tooltip: '${_formatThousands(dataMax)} ${'USD'.tr}',
                     tooltipBg: context.theme.primaryColor,
+                    tooltipIndex: peakMonth,
                     axisMax: axisMax,
                   ),
                 ),
@@ -3890,9 +5563,10 @@ class RevenueView extends GetView<RevenueController> {
   }
 
   Widget _buildXAxisLabels(BuildContext context, int count) {
-    // Day markers (1 → 29 مايو), each sitting under its real point on the chart.
-    const days = [1, 8, 15, 22, 29];
-    final month = 'May'.tr;
+    // Only a few of the 12 months are labelled, otherwise they overlap. Each
+    // sits under its real point on the chart.
+    const marks = [0, 3, 6, 9, 11];
+    final shown = marks.where((m) => m < count).toList();
     final style = TextStyle(fontSize: 9, color: context.theme.hintColor);
 
     return SizedBox(
@@ -3902,16 +5576,16 @@ class RevenueView extends GetView<RevenueController> {
           final width = box.maxWidth;
           return Stack(
             clipBehavior: Clip.none,
-            children: days.where((d) => d <= count).map((d) {
-              // point d (1-indexed) is drawn at x = (d-1)/(count-1) of the width
-              final t = count > 1 ? (d - 1) / (count - 1) : 0.0;
-              final label = Text('$d $month', style: style);
+            children: shown.map((m) {
+              // point m (0-indexed) is drawn at x = m/(count-1) of the width
+              final t = count > 1 ? m / (count - 1) : 0.0;
+              final label = Text(_monthKeys[m].tr, style: style);
               // Anchor first label to the left edge and last to the right edge
               // so nothing clips; center the rest on their point.
-              if (d == days.first) {
+              if (m == shown.first) {
                 return Positioned(left: 0, child: label);
               }
-              if (d == days.where((x) => x <= count).last) {
+              if (m == shown.last) {
                 return Positioned(right: 0, child: label);
               }
               return Positioned(
@@ -3927,6 +5601,20 @@ class RevenueView extends GetView<RevenueController> {
       ),
     );
   }
+
+  // ─── Month helpers ────────────────────────────────────────────────────────
+
+  /// Translation keys for the month labels. The backend sends `month` in
+  /// English no matter the `Accept-Language` header, so the label is always
+  /// derived from the value's position in the year and localized here instead.
+  static const _monthKeys = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// How many months of the year have data worth plotting — everything up to
+  /// and including the current one.
+  int _elapsedMonths(int count) => DateTime.now().month.clamp(1, count);
 
   // ─── Number helpers ───────────────────────────────────────────────────────
 
@@ -3973,12 +5661,18 @@ class RevenueView extends GetView<RevenueController> {
 
 class _LineChartPainter extends CustomPainter {
   final List<double> data;
+  // How many of [data]'s points to actually draw. The X axis still spans the
+  // full list, so a partly-elapsed year keeps all 12 month slots.
+  final int? plotCount;
   final Color lineColor;
   final bool showDots;
   final bool showGrid;
   final double fillOpacity;
   final String? tooltip;
   final Color? tooltipBg;
+  // Which point the tooltip bubble and the emphasized dot sit on. Defaults to
+  // the last drawn point.
+  final int? tooltipIndex;
   // When set, normalizes Y against this ceiling (must match Y-axis labels).
   // When null, self-computes from data min→max (used for the sparkline).
   final double? axisMax;
@@ -3989,23 +5683,27 @@ class _LineChartPainter extends CustomPainter {
     required this.showDots,
     required this.showGrid,
     required this.fillOpacity,
+    this.plotCount,
     this.tooltip,
     this.tooltipBg,
+    this.tooltipIndex,
     this.axisMax,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (data.length < 2) return;
+    if (data.isEmpty) return;
+    final count = (plotCount ?? data.length).clamp(1, data.length);
+    final drawn = data.take(count);
 
-    final dataMax = data.reduce((a, b) => a > b ? a : b);
-    final dataMin = data.reduce((a, b) => a < b ? a : b);
+    final dataMax = drawn.reduce((a, b) => a > b ? a : b);
+    final dataMin = drawn.reduce((a, b) => a < b ? a : b);
     // Use the axis ceiling when provided so the line matches the Y-axis labels.
     // Fall back to min→max normalization for the compact sparkline.
     final yMax = axisMax ?? dataMax;
     final yMin = axisMax != null ? 0.0 : dataMin;
     final range = (yMax - yMin) == 0 ? 1.0 : (yMax - yMin);
-    final xStep = size.width / (data.length - 1);
+    final xStep = data.length > 1 ? size.width / (data.length - 1) : 0.0;
 
     Offset toPoint(int i) => Offset(
           i * xStep,
@@ -4013,7 +5711,7 @@ class _LineChartPainter extends CustomPainter {
               size.height * 0.05,
         );
 
-    final points = List.generate(data.length, toPoint);
+    final points = List.generate(count, toPoint);
 
     // Grid
     if (showGrid) {
@@ -4027,7 +5725,7 @@ class _LineChartPainter extends CustomPainter {
     }
 
     // Fill under line
-    if (fillOpacity > 0) {
+    if (fillOpacity > 0 && points.length > 1) {
       final fillPath = Path()..moveTo(points.first.dx, size.height);
       for (final p in points) {
         fillPath.lineTo(p.dx, p.dy);
@@ -4049,11 +5747,13 @@ class _LineChartPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    final path = Path()..moveTo(points[0].dx, points[0].dy);
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
+    if (points.length > 1) {
+      final path = Path()..moveTo(points[0].dx, points[0].dy);
+      for (int i = 1; i < points.length; i++) {
+        path.lineTo(points[i].dx, points[i].dy);
+      }
+      canvas.drawPath(path, linePaint);
     }
-    canvas.drawPath(path, linePaint);
 
     // Small hollow dot at every data point
     if (showDots) {
@@ -4067,12 +5767,13 @@ class _LineChartPainter extends CustomPainter {
         canvas.drawCircle(p, 2.6, dotRing);
       }
 
-      // Emphasized last point
-      final last = points.last;
+      // Emphasized point — the one the tooltip is about
+      final last = points[(tooltipIndex ?? points.length - 1)
+          .clamp(0, points.length - 1)];
       canvas.drawCircle(last, 4, Paint()..color = lineColor);
       canvas.drawCircle(last, 2, Paint()..color = Colors.white);
 
-      // Tooltip bubble above the last point
+      // Tooltip bubble above that point
       if (tooltip != null && tooltipBg != null) {
         final tp = TextPainter(
           text: TextSpan(
@@ -4108,7 +5809,12 @@ class _LineChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LineChartPainter old) =>
-      old.data != data || old.lineColor != lineColor || old.axisMax != axisMax;
+      old.data != data ||
+      old.plotCount != plotCount ||
+      old.lineColor != lineColor ||
+      old.tooltip != tooltip ||
+      old.tooltipIndex != tooltipIndex ||
+      old.axisMax != axisMax;
 }
 
 ```
@@ -4522,7 +6228,9 @@ class PatientsView extends GetView<PatientsController> {
             ),
           ),
           InkWell(
-            onTap: () {},
+            onTap: () {
+              Get.toNamed('/medical_file', arguments: patient.id);
+            },
             borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
             child: Container(
               width: double.infinity,
@@ -4843,11 +6551,7 @@ class ScheduleView extends GetView<ScheduleController> {
 ```dart
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-
 import '../../controllers/settings/doctor_availability_controller.dart';
-
-
-
 
 class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
   const DoctorAvailabilityView({super.key});
@@ -4858,7 +6562,10 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
       backgroundColor: context.theme.scaffoldBackgroundColor,
       appBar: AppBar(
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: context.theme.appBarTheme.iconTheme?.color),
+          icon: Icon(
+            Icons.arrow_back_ios,
+            color: context.theme.appBarTheme.iconTheme?.color,
+          ),
           onPressed: () => Get.back(),
         ),
         title: Text('Clinic Settings'.tr),
@@ -4866,141 +6573,260 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            // ─── بطاقة إدخال يوم العمل الرئيسية ───
-            Container(
-              padding: const EdgeInsets.all(20),
+
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showAddBottomSheet(context),
+        backgroundColor: context.theme.primaryColor,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: Text(
+          'Enter Working Day'.tr,
+          style: const TextStyle(color: Colors.white),
+        ),
+      ),
+
+      body: Obx(() {
+        if (controller.isFetching.value) {
+          return Center(
+            child: CircularProgressIndicator(color: context.theme.primaryColor),
+          );
+        }
+
+        if (controller.availabilitiesList.isEmpty) {
+          return Center(
+            child: Text(
+              'لا يوجد أوقات دوام مضافة حالياً.',
+              style: context.theme.textTheme.bodyLarge?.copyWith(
+                color: context.theme.hintColor,
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.only(
+            top: 16,
+            left: 20,
+            right: 20,
+            bottom: 100,
+          ),
+          itemCount: controller.availabilitiesList.length,
+          itemBuilder: (context, index) {
+            final item = controller.availabilitiesList[index];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: context.theme.cardColor,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: context.theme.dividerColor.withOpacity(0.1),
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.02),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
-                  )
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
                 ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                title: Text(
+                  item.dayOfWeek.tr, // وصول آمن عبر المودل
+                  style: context.theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Row(
                     children: [
-                      Icon(Icons.edit_calendar_outlined, color: context.theme.primaryColor, size: 24),
-                      const SizedBox(width: 10),
+                      Icon(
+                        Icons.access_time,
+                        size: 16,
+                        color: context.theme.hintColor,
+                      ),
+                      const SizedBox(width: 6),
                       Text(
-                        'Enter Working Day'.tr,
-                        style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        '${item.startTime} - ${item.endTime}',
+                        style: TextStyle(color: context.theme.hintColor),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
-
-                  // حقل اختيار اليوم (Dropdown)
-                  Text('Day'.tr, style: TextStyle(color: context.theme.hintColor, fontSize: 13)),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: context.theme.scaffoldBackgroundColor.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: context.theme.dividerColor.withOpacity(0.1)),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: Obx(() => DropdownButton<String>(
-                        value: controller.selectedDay.value,
-                        isExpanded: true,
-                        icon: Icon(Icons.keyboard_arrow_down, color: context.theme.primaryColor),
-                        items: controller.apiDays.map((String day) {
-                          return DropdownMenuItem<String>(
-                            value: day,
-                            child: Text(day.tr), // الترجمة ديناميكية لكل يوم
-                          );
-                        }).toList(),
-                        onChanged: (newValue) {
-                          if (newValue != null) controller.selectedDay.value = newValue;
-                        },
-                      )),
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // حقول اختيار الوقت (جنباً إلى جنب)
-                  Row(
-                    children: [
-                      Expanded(child: _buildTimePickerField(context, 'Start Time'.tr, true)),
-                      const SizedBox(width: 16),
-                      Expanded(child: _buildTimePickerField(context, 'End Time'.tr, false)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ─── مربع التنبيه الاحترافي الأزرق ───
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: context.theme.primaryColor.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.theme.primaryColor.withOpacity(0.15)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: context.theme.primaryColor, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'This day will be saved as your available working hours.'.tr,
-                      style: TextStyle(color: context.theme.primaryColor, fontSize: 13, height: 1.4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 32),
-
-            //   حفظ وقت الدوام
-            Obx(() => SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: context.theme.primaryColor,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 1,
                 ),
-                onPressed: controller.isLoading ? null : () => controller.saveWorkingHours(),
-                child: controller.isLoading
-                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                    : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.save_outlined, color: Colors.white),
-                    const SizedBox(width: 10),
-                    Text('Save Working Hours'.tr, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                  ],
+                trailing: IconButton(
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.redAccent,
+                  ),
+                  onPressed: () => _confirmDelete(context, item.id),
                 ),
               ),
-            )),
-          ],
-        ),
+            );
+          },
+        );
+      }),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, int id) {
+    Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Delete'.tr, style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to delete this working day?'.tr), // تم ربطها بالترجمة
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            style: TextButton.styleFrom(
+              overlayColor: context.theme.primaryColor.withOpacity(0.1),
+            ),
+            child: Text('Cancel'.tr, style: TextStyle(color: context.theme.primaryColor, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              Get.back();
+              controller.deleteDay(id);
+            },
+            child: Text('Delete'.tr, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildTimePickerField(BuildContext context, String label, bool isStartTime) {
+  void _showAddBottomSheet(BuildContext context) {
+    Get.bottomSheet(
+      Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: context.theme.scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
+          ),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter Working Day'.tr,
+                style: context.theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Day'.tr,
+                style: TextStyle(color: context.theme.hintColor, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: context.theme.cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: context.theme.dividerColor.withOpacity(0.1),
+                  ),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: Obx(
+                    () => DropdownButton<String>(
+                      value: controller.selectedDay.value,
+                      isExpanded: true,
+                      icon: Icon(
+                        Icons.keyboard_arrow_down,
+                        color: context.theme.primaryColor,
+                      ),
+                      items: controller.apiDays.map((String day) {
+                        return DropdownMenuItem<String>(
+                          value: day,
+                          child: Text(day.tr),
+                        );
+                      }).toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null)
+                          controller.selectedDay.value = newValue;
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildTimePickerField(
+                      context,
+                      'Start Time'.tr,
+                      true,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildTimePickerField(context, 'End Time'.tr, false),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              Obx(
+                () => SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.theme.primaryColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: controller.isLoading
+                        ? null
+                        : () => controller.saveWorkingHours(),
+                    child: controller.isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : Text(
+                            'Save Working Hours'.tr,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+      isScrollControlled: true,
+    );
+  }
+
+  Widget _buildTimePickerField(
+    BuildContext context,
+    String label,
+    bool isStartTime,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(color: context.theme.hintColor, fontSize: 13)),
+        Text(
+          label,
+          style: TextStyle(color: context.theme.hintColor, fontSize: 13),
+        ),
         const SizedBox(height: 8),
         InkWell(
           onTap: () => controller.pickTime(context, isStartTime),
@@ -5008,18 +6834,30 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
             decoration: BoxDecoration(
-              color: context.theme.scaffoldBackgroundColor.withOpacity(0.5),
+              color: context.theme.cardColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.theme.dividerColor.withOpacity(0.1)),
+              border: Border.all(
+                color: context.theme.dividerColor.withOpacity(0.1),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Obx(() => Text(
-                  isStartTime ? controller.formattedStartTime : controller.formattedEndTime,
-                  style: context.theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                )),
-                Icon(Icons.access_time, color: context.theme.hintColor.withOpacity(0.6), size: 18),
+                Obx(
+                  () => Text(
+                    isStartTime
+                        ? controller.formattedStartTime
+                        : controller.formattedEndTime,
+                    style: context.theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.access_time,
+                  color: context.theme.hintColor.withOpacity(0.6),
+                  size: 18,
+                ),
               ],
             ),
           ),
@@ -5028,6 +6866,7 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
     );
   }
 }
+
 ```
 
 ### File: lib\views\settings\settings_view.dart
@@ -5044,7 +6883,8 @@ class SettingsView extends GetView<SettingsController> {
     return Scaffold(
       backgroundColor: context.theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Settings'.tr), // 👈 كلمة إعدادات فقط
+        title: Text('Settings'.tr),
+        // 👈 كلمة إعدادات فقط
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -5076,11 +6916,49 @@ class SettingsView extends GetView<SettingsController> {
                   icon: Icons.lock_open_outlined,
                   onTap: () => controller.changePassword(),
                 ),
+                _buildDivider(context),
+                _buildSettingsTile(
+                  context,
+                  title: 'Cancel specific day appointments'.tr,
+                  subtitle:
+                      'Select a date from the calendar to cancel all its'.tr,
+                  icon: Icons.event_busy,
+                  iconColor: Colors.red,
+                  onTap: () =>controller.pickDateToCancelAppointments(context),
+                ),
               ],
             ),
           ),
+          // const SizedBox(height: 20),
+          //
+          // ListTile(
+          //   contentPadding: const EdgeInsets.symmetric(
+          //     horizontal: 16,
+          //     vertical: 8,
+          //   ),
+          //   leading: Container(
+          //     padding: const EdgeInsets.all(8),
+          //     decoration: BoxDecoration(
+          //       color: Colors.red.withOpacity(0.1),
+          //       shape: BoxShape.circle,
+          //     ),
+          //     child: const Icon(Icons.event_busy, color: Colors.red),
+          //   ),
+          //   title: Text(
+          //     'Cancel specific day appointments'.tr,
+          //     style: const TextStyle(fontWeight: FontWeight.w600),
+          //   ),
+          //   subtitle: Text(
+          //     'Select a date from the calendar to cancel all its'.tr,
+          //     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          //   ),
+          //   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+          //   onTap: () {
+          //     controller.pickDateToCancelAppointments(context);
+          //   },
+          // ),
 
-          const SizedBox(height: 20), // 👈 فصل المجموعات كما في تطبيق المريض
+          const SizedBox(height: 20),
 
           // ─── المجموعة الثانية: التفضيلات (اللغة والمظهر) ───
           Container(
@@ -5095,7 +6973,8 @@ class SettingsView extends GetView<SettingsController> {
                   title: 'Language'.tr,
                   subtitle: 'Customize app language and view'.tr,
                   icon: Icons.language_outlined,
-                  onTap: () => controller.showLanguageDialog(), // 👈 تم ربطها بالدالة الجديدة هنا
+                  onTap: () => controller
+                      .showLanguageDialog(), // 👈 تم ربطها بالدالة الجديدة هنا
                 ),
                 _buildDivider(context),
                 _buildSettingsTile(
@@ -5110,7 +6989,6 @@ class SettingsView extends GetView<SettingsController> {
           ),
 
           const SizedBox(height: 20), // 👈 فصل المجموعات
-
           // ─── المجموعة الثالثة: الإجراءات الحساسة (حذف الحساب) ───
           Container(
             decoration: BoxDecoration(
@@ -5136,14 +7014,14 @@ class SettingsView extends GetView<SettingsController> {
   }
 
   Widget _buildSettingsTile(
-      BuildContext context, {
-        required String title,
-        required String subtitle,
-        required IconData icon,
-        required VoidCallback onTap,
-        Color? textColor,
-        Color? iconColor,
-      }) {
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required VoidCallback onTap,
+    Color? textColor,
+    Color? iconColor,
+  }) {
     final isRtl = Get.locale?.languageCode == 'ar';
     return InkWell(
       onTap: onTap,
@@ -5156,10 +7034,16 @@ class SettingsView extends GetView<SettingsController> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: (iconColor ?? context.theme.primaryColor).withOpacity(0.08),
+                color: (iconColor ?? context.theme.primaryColor).withOpacity(
+                  0.08,
+                ),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: iconColor ?? context.theme.primaryColor, size: 24),
+              child: Icon(
+                icon,
+                color: iconColor ?? context.theme.primaryColor,
+                size: 24,
+              ),
             ),
             const SizedBox(width: 16),
             // النصوص الأساسية والثانوية
@@ -5202,10 +7086,14 @@ class SettingsView extends GetView<SettingsController> {
   Widget _buildDivider(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(left: 70, right: 16),
-      child: Divider(color: context.theme.dividerColor.withOpacity(0.4), height: 1),
+      child: Divider(
+        color: context.theme.dividerColor.withOpacity(0.4),
+        height: 1,
+      ),
     );
   }
 }
+
 ```
 
 ### File: lib\widgets\custom_button.dart
@@ -5635,7 +7523,7 @@ import 'package:get/get.dart';
 import '../../controllers/examination/examination_controller.dart';
 import '../custom_button.dart';
 
-// ─── زر الإجراء السفلي يتغير حسب التبويب الحالي ───
+// ─── شريط الإجراءات السفلي: زر الفاتورة بجانب زر الحفظ (يتغير حسب التبويب) ───
 class ExaminationBottomAction extends GetView<ExaminationController> {
   const ExaminationBottomAction({super.key});
 
@@ -5645,55 +7533,90 @@ class ExaminationBottomAction extends GetView<ExaminationController> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Obx(() {
         final isPrescription = controller.selectedTab.value == 1;
-        if (isPrescription) {
-          // زر أخضر مدمج (إنهاء المعاينة) — لتفادي تعديل الزر المشترك CustomButton
-          return SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade600,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-              ),
-              onPressed: controller.isLoading
-                  ? null
-                  : () => controller.saveAndFinish(),
-              child: controller.isLoading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.check, color: Colors.white, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Save & Finish Examination'.tr,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
+        return Row(
+          children: [
+            _buildInvoiceButton(context),
+            const SizedBox(width: 12),
+            Expanded(
+              child: isPrescription
+                  ? _buildFinishButton(context)
+                  : CustomButton(
+                      text: 'Save & Continue'.tr,
+                      isLoading: controller.isLoading,
+                      onPressed: () => controller.saveAndContinue(),
                     ),
             ),
-          );
-        }
-        return CustomButton(
-          text: 'Save & Continue'.tr,
-          isLoading: controller.isLoading,
-          onPressed: () => controller.saveAndContinue(),
+          ],
         );
       }),
+    );
+  }
+
+  // زر الفاتورة — متاح في التبويبين، ولا يعتمد على حفظ التشخيص
+  Widget _buildInvoiceButton(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: context.theme.primaryColor,
+          side: BorderSide(color: context.theme.primaryColor),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        onPressed: controller.isLoading ? null : () => controller.openInvoice(),
+        icon: const Icon(Icons.receipt_long_outlined, size: 20),
+        label: Text(
+          'Invoice'.tr,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  // زر أخضر مدمج (إنهاء المعاينة) — لتفادي تعديل الزر المشترك CustomButton
+  Widget _buildFinishButton(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green.shade600,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: 2,
+        ),
+        onPressed: controller.isLoading ? null : () => controller.saveAndFinish(),
+        child: controller.isLoading
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.check, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Save & Finish Examination'.tr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }
@@ -6621,5 +8544,557 @@ class StatsGrid extends GetView<HomeController> {
     );
   }
 }
+```
+
+### File: lib\widgets\invoice\consultation_fee_card.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/invoice/invoice_controller.dart';
+
+// ─── بطاقة أجرة الكشف — قيمة ثابتة تُضبط عند الحجز ولا يعدّلها الطبيب ───
+class ConsultationFeeCard extends GetView<InvoiceController> {
+  const ConsultationFeeCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: context.theme.primaryColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.medical_services_outlined,
+              color: context.theme.primaryColor,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Consultation Fee'.tr,
+                  style: context.theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'General Consultation'.tr,
+                  style: context.theme.textTheme.bodySmall?.copyWith(
+                    color: context.theme.hintColor,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Obx(
+            () => Text(
+              controller.formatMoney(controller.consultationFee),
+              style: context.theme.textTheme.titleMedium?.copyWith(
+                color: context.theme.primaryColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\invoice\extra_services_card.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:get/get.dart';
+import '../../controllers/invoice/invoice_controller.dart';
+import '../../models/invoice/invoice_model.dart';
+
+// ─── بطاقة الخدمات الإضافية — حقلا الاسم والتكلفة ثم قائمة الخدمات المضافة ───
+// كل خدمة تُحفظ في الخادم لحظة إضافتها، والقائمة تُرسم من رد الخادم مباشرة.
+class ExtraServicesCard extends GetView<InvoiceController> {
+  const ExtraServicesCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildFieldLabel(context, 'Service Name'.tr),
+          const SizedBox(height: 6),
+          _buildServiceNameField(context),
+          const SizedBox(height: 14),
+          Obx(
+            () => _buildFieldLabel(
+              context,
+              '${'Cost'.tr} (${controller.currencySymbol})',
+            ),
+          ),
+          const SizedBox(height: 6),
+          _buildCostField(context),
+          Obx(() {
+            final items = controller.additions;
+            if (items.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: Text(
+                  'No extra services added'.tr,
+                  style: context.theme.textTheme.bodySmall?.copyWith(
+                    color: context.theme.hintColor,
+                  ),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                const SizedBox(height: 6),
+                for (final item in items) _buildServiceRow(context, item),
+              ],
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFieldLabel(BuildContext context, String label) {
+    return Text(
+      label,
+      style: context.theme.textTheme.bodySmall?.copyWith(
+        color: context.theme.hintColor,
+        fontSize: 12,
+      ),
+    );
+  }
+
+  // حقل الاسم — أيقونة داخل الحافة اليمنى/اليسرى وزر مسح سريع
+  Widget _buildServiceNameField(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: context.theme.scaffoldBackgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: context.theme.primaryColor.withValues(alpha: 0.10),
+              // اتجاهية حتى تلتصق الأيقونة بحافة الحقل في العربية والإنجليزية
+              borderRadius: const BorderRadiusDirectional.horizontal(
+                start: Radius.circular(11),
+              ),
+            ),
+            child: Icon(
+              Icons.vaccines_outlined,
+              size: 20,
+              color: context.theme.primaryColor,
+            ),
+          ),
+          Expanded(
+            child: TextField(
+              controller: controller.serviceNameController,
+              textInputAction: TextInputAction.next,
+              maxLength: 100,
+              style: TextStyle(
+                color: context.theme.textTheme.bodyLarge?.color,
+              ),
+              decoration: InputDecoration(
+                counterText: '',
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                hintText: 'e.g. Nebulizer session'.tr,
+                hintStyle: TextStyle(
+                  color: context.theme.hintColor.withValues(alpha: 0.6),
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: controller.clearServiceName,
+            icon: Icon(Icons.close, size: 18, color: context.theme.hintColor),
+            tooltip: 'Clear'.tr,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCostField(BuildContext context) {
+    return TextField(
+      controller: controller.costController,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      // منع الإشارات والحروف — الخادم يتوقع رقماً موجباً
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+      ],
+      style: TextStyle(color: context.theme.textTheme.bodyLarge?.color),
+      decoration: InputDecoration(
+        isDense: true,
+        filled: true,
+        fillColor: context.theme.scaffoldBackgroundColor,
+        hintText: '0.00',
+        hintStyle: TextStyle(
+          color: context.theme.hintColor.withValues(alpha: 0.6),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 14,
+          horizontal: 16,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: context.theme.dividerColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: context.theme.primaryColor,
+            width: 1.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // صف خدمة محفوظة — الحذف ينادي الخادم ويعيد رسم الفاتورة من الرد
+  Widget _buildServiceRow(BuildContext context, AdditionModel item) {
+    final isDeleting = controller.deletingAdditionId.value == item.id;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          Icon(Icons.circle, size: 7, color: context.theme.primaryColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              item.itemName,
+              style: context.theme.textTheme.bodyMedium?.copyWith(
+                color: context.theme.textTheme.bodyLarge?.color,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Text(
+            controller.formatMoney(item.price),
+            style: context.theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 36,
+            height: 36,
+            child: isDeleting
+                ? const Padding(
+                    padding: EdgeInsets.all(9),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Material(
+                    color: Colors.red.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => controller.deleteItem(item),
+                      child: const Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\invoice\invoice_patient_card.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/invoice/invoice_controller.dart';
+import '../../core/constants.dart';
+
+// ─── بطاقة المريض أعلى الفاتورة (الصورة / الاسم / المعرف / تاريخ ووقت الموعد) ───
+class InvoicePatientCard extends GetView<InvoiceController> {
+  const InvoicePatientCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final image = controller.patientImage;
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: context.theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: context.theme.dividerColor),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: context.theme.primaryColor.withValues(
+                    alpha: 0.12,
+                  ),
+                  // الباك إند قد يرجع رابطاً كاملاً أو مساراً نسبياً
+                  backgroundImage: image.isNotEmpty
+                      ? NetworkImage(
+                          image.startsWith('http') ? image : '$baseUrl/$image',
+                        )
+                      : null,
+                  child: image.isEmpty
+                      ? Icon(
+                          Icons.person,
+                          color: context.theme.primaryColor,
+                          size: 32,
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        controller.patientName.isEmpty
+                            ? 'Loading...'.tr
+                            : controller.patientName,
+                        style: context.theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            '${'Patient ID'.tr}: ',
+                            style: context.theme.textTheme.bodySmall?.copyWith(
+                              color: context.theme.hintColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            controller.formattedPatientId,
+                            style: context.theme.textTheme.bodySmall?.copyWith(
+                              color: context.theme.primaryColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Divider(color: context.theme.dividerColor, height: 28),
+            Row(
+              children: [
+                _buildMeta(
+                  context,
+                  Icons.calendar_today_outlined,
+                  controller.formattedDate,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Icon(
+                    Icons.circle,
+                    size: 4,
+                    color: context.theme.hintColor,
+                  ),
+                ),
+                _buildMeta(
+                  context,
+                  Icons.access_time,
+                  controller.formattedTime,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _buildMeta(BuildContext context, IconData icon, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: context.theme.primaryColor),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: context.theme.textTheme.bodySmall?.copyWith(
+            color: context.theme.hintColor,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\invoice\invoice_summary_card.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/invoice/invoice_controller.dart';
+
+// ─── بطاقة الإجمالي — الأجرة + مجموع الخدمات الإضافية ───
+class InvoiceSummaryCard extends GetView<InvoiceController> {
+  const InvoiceSummaryCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Obx(
+        () => Column(
+          children: [
+            _buildRow(
+              context,
+              'Consultation Fee'.tr,
+              controller.formatMoney(controller.consultationFee),
+            ),
+            const SizedBox(height: 10),
+            _buildRow(
+              context,
+              '${'Extra Services'.tr} (${controller.additions.length})',
+              controller.formatMoney(controller.extrasTotal),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: _DashedDivider(),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Total Amount'.tr,
+                    style: context.theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                Text(
+                  controller.formatMoney(controller.totalAmount),
+                  style: context.theme.textTheme.titleLarge?.copyWith(
+                    color: context.theme.primaryColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRow(BuildContext context, String label, String value) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: context.theme.textTheme.bodyMedium?.copyWith(
+              color: context.theme.hintColor,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: context.theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// فاصل متقطع يفصل بنود الفاتورة عن الإجمالي
+class _DashedDivider extends StatelessWidget {
+  const _DashedDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const dashWidth = 5.0;
+        const dashSpace = 4.0;
+        final count = (constraints.maxWidth / (dashWidth + dashSpace)).floor();
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(
+            count,
+            (_) => SizedBox(
+              width: dashWidth,
+              height: 1,
+              child: DecoratedBox(
+                decoration: BoxDecoration(color: context.theme.dividerColor),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 ```
 

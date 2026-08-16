@@ -43,7 +43,7 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
         if (controller.availabilitiesList.isEmpty) {
           return Center(
             child: Text(
-              'لا يوجد أوقات دوام مضافة حالياً.',
+              'There are no available days',
               style: context.theme.textTheme.bodyLarge?.copyWith(
                 color: context.theme.hintColor,
               ),

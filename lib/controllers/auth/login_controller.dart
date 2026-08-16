@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/helper/secure_storage_service.dart';
 import '../../core/repos/auth/login_repo.dart';
+import '../../service/notification_service.dart';
 import '../base_controller.dart';
 
 class LoginController extends BaseController {
@@ -27,6 +28,7 @@ class LoginController extends BaseController {
 
       if (result.token.isNotEmpty) {
         await SecureStorage.storeToken(result.token);
+        await NotificationService.sendFCMTokenToServer();
 
         hideLoading();
 

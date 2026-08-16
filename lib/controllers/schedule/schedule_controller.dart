@@ -26,15 +26,14 @@ class ScheduleController extends BaseController {
       weekDates.assignAll(days);
 
       if (weekDates.isNotEmpty) {
-        // تحديد أول يوم عمل تلقائياً
+
         selectedDate.value = weekDates.first;
-        // جلب مواعيد اليوم الأول بدون إظهار لودينج متداخل
+
         await fetchScheduleForDate(selectedDate.value, showLoad: false);
-      } else {
-        hideLoading();
       }
     } catch (e) {
       handleError(e);
+    } finally {
       hideLoading();
     }
   }
