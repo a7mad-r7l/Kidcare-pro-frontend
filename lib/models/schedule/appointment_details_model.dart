@@ -13,6 +13,7 @@ class AppointmentDetailsModel {
   final String childImage;
   final String childGender;
   final int childAge;
+  final String childAgeType;
 
   // حقول وهمية مؤقتة لتطابق التصميم (يجب إضافتها من الباك إند لاحقاً)
   final String fileNumber;
@@ -35,7 +36,7 @@ class AppointmentDetailsModel {
     required this.childAge,
     required this.fileNumber,
     required this.appointmentType,
-    required this.parentsNotes,
+    required this.parentsNotes, required this.childAgeType,
   });
 
   factory AppointmentDetailsModel.fromJson(Map<String, dynamic> json) {
@@ -79,6 +80,7 @@ class AppointmentDetailsModel {
 
       childGender: child['gender']?.toString() ?? 'male',
       childAge: int.tryParse(child['age']?.toString() ?? '0') ?? 0,
+      childAgeType: child['age_type']?.toString() ?? 'year',
 
       // تعيين قيم افتراضية للحقول الناقصة
       fileNumber: 'PT-2024-${json['appointment_id']}',

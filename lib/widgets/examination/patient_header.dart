@@ -49,7 +49,7 @@ class PatientHeader extends GetView<ExaminationController> {
                   const SizedBox(height: 4),
                   Text(
                     patient != null
-                        ? '${patient.age} Yrs • ${patient.gender.tr}'
+                        ? '${patient.age} ${patient.ageType.tr} • ${patient.gender.tr}'
                         : '',
                     style: context.theme.textTheme.bodyMedium?.copyWith(
                       color: context.theme.hintColor,

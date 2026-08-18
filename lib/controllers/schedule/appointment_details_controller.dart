@@ -37,7 +37,6 @@ class AppointmentDetailsController extends BaseController {
   }
 
   // ─── 1. تأكيد الإلغاء ───
-  // ─── 1. إظهار نافذة تأكيد الإلغاء ───
   void confirmCancellation() {
     Get.dialog(
       AlertDialog(
@@ -56,9 +55,8 @@ class AppointmentDetailsController extends BaseController {
           vertical: 12,
         ),
         actions: [
-          // زر الإلغاء (نظيف وبدون إطار معيب)
           TextButton(
-            onPressed: () => Get.back(), // إغلاق النافذة
+            onPressed: () => Get.back(),
             style: TextButton.styleFrom(
               overlayColor: Get.theme.primaryColor.withOpacity(0.1),
             ),
@@ -70,7 +68,7 @@ class AppointmentDetailsController extends BaseController {
               ),
             ),
           ),
-          // زر التأكيد (أحمر)
+
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -80,8 +78,8 @@ class AppointmentDetailsController extends BaseController {
               ),
             ),
             onPressed: () {
-              Get.back(); // إغلاق النافذة
-              _executeCancellation(); // استدعاء API الإلغاء
+              Get.back();
+              _executeCancellation();
             },
             child: Text(
               'Confirm'.tr,

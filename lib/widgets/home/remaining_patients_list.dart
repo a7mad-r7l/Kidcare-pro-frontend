@@ -42,7 +42,7 @@ class RemainingPatientsList extends GetView<HomeController> {
                     children: [
                       Text(patient.name, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 4),
-                      Text('${patient.age} ${'Yrs'.tr}• ${patient.gender.tr}', style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor, fontSize: 12)),
+                      Text('${patient.age} ${patient.ageType.tr}• ${patient.gender.tr}', style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor, fontSize: 12)),
                     ],
                   ),
                 ),

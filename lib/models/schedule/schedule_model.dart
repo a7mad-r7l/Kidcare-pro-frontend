@@ -18,6 +18,7 @@ class ScheduleAppointmentModel {
   final int id;
   final String patientName;
   final int age;
+  final String ageType;
   final String gender;
   final String image;
   final String time;
@@ -36,7 +37,7 @@ class ScheduleAppointmentModel {
     required this.timePeriod,
     required this.duration,
     required this.note,
-    required this.status,
+    required this.status, required this.ageType,
   });
 
   factory ScheduleAppointmentModel.fromJson(Map<String, dynamic> json) {
@@ -69,6 +70,7 @@ class ScheduleAppointmentModel {
       id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       patientName: json['patient_name']?.toString() ?? '',
       age: int.tryParse(json['age']?.toString() ?? '0') ?? 0,
+      ageType: json['age_type']?.toString() ?? 'year',
       gender: json['gender']?.toString() ?? 'male',
 
       // تمرير قيمة الصورة المنظفة

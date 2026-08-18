@@ -69,75 +69,82 @@ class DoctorNotificationView extends GetView<DoctorNotificationController> {
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               final item = controller.notifications[index];
-              return Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: context.theme.cardColor,
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: context.theme.dividerColor.withValues(alpha: 0.2),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: context.theme.shadowColor.withValues(alpha: 0.02),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: context.theme.primaryColor.withValues(
-                          alpha: 0.1,
+                  onTap: () => controller.handleNotificationTap(item), // 👈 استدعاء دالة التوجيه
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: context.theme.cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: context.theme.dividerColor.withValues(alpha: 0.2),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: context.theme.shadowColor.withValues(alpha: 0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.notifications_active_outlined,
-                        color: context.theme.primaryColor,
-                        size: 22,
-                      ),
+                      ],
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.title,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: context.textTheme.bodyLarge?.color,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: context.theme.primaryColor.withValues(
+                              alpha: 0.1,
                             ),
+                            shape: BoxShape.circle,
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            item.message,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: context.textTheme.bodyMedium?.color,
-                              height: 1.4,
-                            ),
+                          child: Icon(
+                            Icons.notifications_active_outlined,
+                            color: context.theme.primaryColor,
+                            size: 22,
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            controller.formatDateTime(item.createdAt),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: context.theme.hintColor.withValues(
-                                alpha: 0.6,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: context.textTheme.bodyLarge?.color,
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 6),
+                              Text(
+                                item.message,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: context.textTheme.bodyMedium?.color,
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                controller.formatDateTime(item.createdAt),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: context.theme.hintColor.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               );
             },

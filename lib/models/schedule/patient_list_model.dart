@@ -2,6 +2,7 @@ class PatientListModel {
   final int id;
   final String name;
   final int age;
+  final String ageType;
   final String gender;
   final String image;
   final String parentPhone;
@@ -14,7 +15,7 @@ class PatientListModel {
     required this.gender,
     required this.image,
     required this.parentPhone,
-    required this.fileNumber,
+    required this.fileNumber, required this.ageType,
   });
 
   factory PatientListModel.fromJson(Map<String, dynamic> json) {
@@ -29,6 +30,7 @@ class PatientListModel {
       id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       name: json['name']?.toString() ?? '',
       age: int.tryParse(json['age']?.toString() ?? '0') ?? 0,
+      ageType: json['age_type']?.toString() ?? 'year',
       gender: json['gender']?.toString() ?? 'male',
       image: rawImage,
       parentPhone: json['parent_phone']?.toString() ?? '',

@@ -11,6 +11,7 @@ class HomeController extends BaseController {
   final HomeRepo repo;
 
   HomeController({required this.repo});
+  final RxBool hasUnreadNotifications = false.obs;
 
   final currentIndex = 0.obs;
   final selectedDate = DateTime.now().obs;

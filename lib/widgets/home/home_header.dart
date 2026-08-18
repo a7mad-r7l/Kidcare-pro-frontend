@@ -69,24 +69,33 @@ class HomeHeader extends GetView<HomeController> {
                         color: context.theme.textTheme.bodyLarge?.color,
                         size: 26,
                       ),
-                      onPressed: () => Get.toNamed('/doctor_notifications'),
+                      onPressed: () {
+                        //  إخفاء النقطة عند فتح الإشعارات
+                        controller.hasUnreadNotifications.value = false;
+                        Get.toNamed('/doctor_notifications');
+                      },
                     ),
                   ),
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: context.theme.scaffoldBackgroundColor,
-                          width: 2,
+                  //  النقطة التفاعلية
+                  Obx(
+                        () => controller.hasUnreadNotifications.value
+                        ? Positioned(
+                      right: 12,
+                      top: 12,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: context.theme.scaffoldBackgroundColor,
+                            width: 2,
+                          ),
                         ),
                       ),
-                    ),
+                    )
+                        : const SizedBox.shrink(),
                   ),
                 ],
               ),

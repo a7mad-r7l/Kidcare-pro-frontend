@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+
 import 'package:get/get.dart';
 import '../../core/repos/profile/doctor_profile_repo.dart';
 import '../../models/profile/doctor_profile_model.dart';
@@ -36,15 +36,15 @@ class DoctorProfileController extends BaseController {
     showLoading();
     try {
       await repo.updateProfile({key: newValue});
-      await fetchProfile(); // جلب البيانات لتحديث الواجهة
+      await fetchProfile();
 
-      // تحديث اسم الطبيب في الهوم إذا تم تغيير الاسم
+
       if ((key == 'first_name' || key == 'last_name') &&
           Get.isRegistered<HomeController>()) {
         Get.find<HomeController>().fetchAllDashboardData();
       }
 
-      Get.back(); // إغلاق نافذة التعديل
+      Get.back();
       showSuccess('Profile updated successfully'.tr);
     } catch (e) {
       handleError(e);

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:get/get.dart';
 
 import '../../../models/settings/availability_item_model.dart';
+import '../../../models/settings/available_period_model.dart';
 import '../../../models/settings/doctor_availability_model.dart';
 import '../../apis/settings/doctor_availability_api.dart';
 
@@ -50,11 +51,24 @@ class DoctorAvailabilityRepo {
     final decodedJson = jsonDecode(_cleanJson(response.body));
 
     if (response.statusCode == 200) {
-      final List data = decodedJson['data'] ?? [];
+      final List data = decodedJson['availabilities'] ?? decodedJson['data'] ?? [];
       return data.map((e) => AvailabilityItemModel.fromJson(e)).toList();
     } else {
       throw Exception(
         decodedJson['message'] ?? 'Failed to load availabilities',
+      );
+    }
+  }
+  Future<List<AvailablePeriodModel>> fetchAvailableWorkingPeriods() async {
+    final response = await api.getAvailableWorkingPeriods();
+    final decodedJson = jsonDecode(_cleanJson(response.body));
+
+    if (response.statusCode == 200 && decodedJson['status'] == 'success') {
+      final List data = decodedJson['available_periods'] ?? [];
+      return data.map((e) => AvailablePeriodModel.fromJson(e)).toList();
+    } else {
+      throw Exception(
+        decodedJson['message'] ?? 'Failed to load free periods',
       );
     }
   }

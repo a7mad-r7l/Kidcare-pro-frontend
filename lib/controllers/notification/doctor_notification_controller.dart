@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../core/repos/notification/doctor_notification_repo.dart';
 import '../../models/notification/doctor_notification_model.dart';
 import '../base_controller.dart';
+import '../home/home_controller.dart';
 
 class DoctorNotificationController extends BaseController {
   final DoctorNotificationRepo repo;
@@ -40,5 +41,30 @@ class DoctorNotificationController extends BaseController {
     } catch (_) {
       return rawDate;
     }
+  }
+
+  // 👈 الدالة المسؤولة عن التوجيه عند الضغط على إشعار من داخل التطبيق
+  void handleNotificationTap(DoctorNotificationModel notification) {
+    final titleLower = notification.title.toLowerCase();
+
+    Get.offAllNamed(
+      '/doctor_home',
+    ); // العودة للرئيسية أولاً لضمان وجود الـ HomeController
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (Get.isRegistered<HomeController>()) {
+        final homeCtrl = Get.find<HomeController>();
+        homeCtrl.fetchAllDashboardData(); // تحديث البيانات
+
+        // تحليل العنوان وتوجيه الطبيب للتاب المناسب
+        if (titleLower.contains('cancel') ||
+            titleLower.contains('appointment')) {
+          homeCtrl.currentIndex.value = 1; // توجيه لتاب الجدول (Schedule)
+        } else if (titleLower.contains('arrived')) {
+          homeCtrl.currentIndex.value =
+              0; // توجيه لتاب الرئيسية (Dashboard) لرؤية المريض المنتظر
+        }
+      }
+    });
   }
 }

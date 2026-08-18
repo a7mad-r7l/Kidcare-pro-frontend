@@ -50,7 +50,7 @@ class NextPatientCard extends GetView<HomeController> {
                     children: [
                       Text(patient.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                       const SizedBox(height: 6),
-                      Text('${patient.age} ${'Yrs'.tr}• ${patient.gender.tr}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                      Text('${patient.age} ${patient.ageType.tr}• ${patient.gender.tr}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
                     ],
                   ),
                 ),

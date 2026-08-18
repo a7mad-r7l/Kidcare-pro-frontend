@@ -128,7 +128,7 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${data.childAge} ${'Yrs'.tr} - ${data.childGender.tr}',
+                  '${data.childAge} ${data.childAgeType.tr} - ${data.childGender.tr}',
                   style: context.theme.textTheme.bodyMedium?.copyWith(
                     color: context.theme.hintColor,
                   ),
@@ -327,6 +327,7 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
                 appointmentId: data.appointmentId,
                 name: data.childName,
                 age: data.childAge,
+                ageType: data.childAgeType,
                 gender: data.childGender,
                 image: data.childImage,
                 appointmentTime: data.time,

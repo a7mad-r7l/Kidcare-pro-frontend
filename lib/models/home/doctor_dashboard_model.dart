@@ -21,6 +21,7 @@ class PatientModel {
   final int appointmentId;
   final String name;
   final int age;
+  final String ageType;
   final String gender;
   final String image;
   final String appointmentTime;
@@ -32,7 +33,7 @@ class PatientModel {
     required this.age,
     required this.gender,
     required this.image,
-    required this.appointmentTime,
+    required this.appointmentTime, required this.ageType,
   });
 
   factory PatientModel.fromJson(Map<String, dynamic> json) {
@@ -48,6 +49,7 @@ class PatientModel {
       name: json['name']?.toString() ?? json['patient_name']?.toString() ?? '',
 
       age: json['age'] is int ? json['age'] : int.tryParse(json['age']?.toString() ?? '0') ?? 0,
+      ageType: json['age_type']?.toString() ?? 'year',
       gender: json['gender']?.toString() ?? 'male',
       image: json['image']?.toString() ?? '',
       // ─── توافقية مع اختلاف أسماء حقول الوقت ───

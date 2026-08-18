@@ -862,6 +862,81 @@ class InvoiceController extends BaseController {
 
 ```
 
+### File: lib\controllers\notification\doctor_notification_controller.dart
+```dart
+import 'package:get/get.dart';
+import 'package:intl/intl.dart';
+import '../../core/repos/notification/doctor_notification_repo.dart';
+import '../../models/notification/doctor_notification_model.dart';
+import '../base_controller.dart';
+import '../home/home_controller.dart';
+
+class DoctorNotificationController extends BaseController {
+  final DoctorNotificationRepo repo;
+
+  DoctorNotificationController({required this.repo});
+
+  final notifications = <DoctorNotificationModel>[].obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+    fetchNotifications();
+  }
+
+  Future<void> fetchNotifications() async {
+    showLoading();
+    try {
+      final list = await repo.getNotifications();
+      notifications.assignAll(list);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+
+  String formatDateTime(String rawDate) {
+    if (rawDate.isEmpty) return '';
+    try {
+      final parsed = DateTime.parse(rawDate).toLocal();
+      return DateFormat(
+        'yyyy-MM-dd • hh:mm a',
+        Get.locale?.languageCode ?? 'en',
+      ).format(parsed);
+    } catch (_) {
+      return rawDate;
+    }
+  }
+
+  // 👈 الدالة المسؤولة عن التوجيه عند الضغط على إشعار من داخل التطبيق
+  void handleNotificationTap(DoctorNotificationModel notification) {
+    final titleLower = notification.title.toLowerCase();
+
+    Get.offAllNamed(
+      '/doctor_home',
+    ); // العودة للرئيسية أولاً لضمان وجود الـ HomeController
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (Get.isRegistered<HomeController>()) {
+        final homeCtrl = Get.find<HomeController>();
+        homeCtrl.fetchAllDashboardData(); // تحديث البيانات
+
+        // تحليل العنوان وتوجيه الطبيب للتاب المناسب
+        if (titleLower.contains('cancel') ||
+            titleLower.contains('appointment')) {
+          homeCtrl.currentIndex.value = 1; // توجيه لتاب الجدول (Schedule)
+        } else if (titleLower.contains('arrived')) {
+          homeCtrl.currentIndex.value =
+              0; // توجيه لتاب الرئيسية (Dashboard) لرؤية المريض المنتظر
+        }
+      }
+    });
+  }
+}
+
+```
+
 ### File: lib\controllers\patients\medical_file_controller.dart
 ```dart
 import 'package:get/get.dart';
@@ -911,6 +986,66 @@ class MedicalFileController extends BaseController {
 }
 ```
 
+### File: lib\controllers\profile\doctor_profile_controller.dart
+```dart
+
+import 'package:get/get.dart';
+import '../../core/repos/profile/doctor_profile_repo.dart';
+import '../../models/profile/doctor_profile_model.dart';
+import '../base_controller.dart';
+import '../home/home_controller.dart';
+
+class DoctorProfileController extends BaseController {
+  final DoctorProfileRepo repo;
+
+  DoctorProfileController({required this.repo});
+
+  final Rx<DoctorProfileModel?> profile = Rx<DoctorProfileModel?>(null);
+
+  @override
+  void onInit() {
+    super.onInit();
+    fetchProfile();
+  }
+
+  Future<void> fetchProfile() async {
+    showLoading();
+    try {
+      final result = await repo.getProfile();
+      profile.value = result;
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+
+  Future<void> updateProfileField(String key, dynamic newValue) async {
+    if (newValue.toString().trim().isEmpty) return;
+
+    showLoading();
+    try {
+      await repo.updateProfile({key: newValue});
+      await fetchProfile();
+
+
+      if ((key == 'first_name' || key == 'last_name') &&
+          Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().fetchAllDashboardData();
+      }
+
+      Get.back();
+      showSuccess('Profile updated successfully'.tr);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+}
+
+```
+
 ### File: lib\controllers\revenue\revenue_controller.dart
 ```dart
 import 'package:flutter/material.dart';
@@ -957,13 +1092,17 @@ class RevenueController extends BaseController {
 
 ### File: lib\controllers\schedule\appointment_details_controller.dart
 ```dart
+import 'package:flutter/material.dart';
+
 import 'package:get/get.dart';
+import 'package:kidcare_pro/controllers/schedule/schedule_controller.dart';
 import '../../core/repos/schedule/appointment_details_repo.dart';
 import '../../models/schedule/appointment_details_model.dart';
 import '../base_controller.dart';
 
 class AppointmentDetailsController extends BaseController {
   final AppointmentDetailsRepo repo;
+
   AppointmentDetailsController({required this.repo});
 
   final appointmentDetails = Rxn<AppointmentDetailsModel>();
@@ -990,7 +1129,89 @@ class AppointmentDetailsController extends BaseController {
       hideLoading();
     }
   }
+
+  // ─── 1. تأكيد الإلغاء ───
+  void confirmCancellation() {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: Get.theme.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Cancel Appointment'.tr,
+          style: const TextStyle(
+            color: Colors.red,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text('Are you sure you want to cancel this appointment?'.tr),
+        actionsPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            style: TextButton.styleFrom(
+              overlayColor: Get.theme.primaryColor.withOpacity(0.1),
+            ),
+            child: Text(
+              'Back'.tr,
+              style: TextStyle(
+                color: Get.theme.primaryColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: () {
+              Get.back();
+              _executeCancellation();
+            },
+            child: Text(
+              'Confirm'.tr,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── 2. طلب الإلغاء ───
+  Future<void> _executeCancellation() async {
+    showLoading();
+    try {
+      final message = await repo.cancelAppointment(appointmentId);
+      showSuccess(message);
+
+      await fetchDetails();
+
+      if (Get.isRegistered<ScheduleController>()) {
+        final scheduleCtrl = Get.find<ScheduleController>();
+        scheduleCtrl.fetchScheduleForDate(
+          scheduleCtrl.selectedDate.value,
+          showLoad: false,
+        );
+      }
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
 }
+
 ```
 
 ### File: lib\controllers\schedule\patients_controller.dart
@@ -1074,15 +1295,14 @@ class ScheduleController extends BaseController {
       weekDates.assignAll(days);
 
       if (weekDates.isNotEmpty) {
-        // تحديد أول يوم عمل تلقائياً
+
         selectedDate.value = weekDates.first;
-        // جلب مواعيد اليوم الأول بدون إظهار لودينج متداخل
+
         await fetchScheduleForDate(selectedDate.value, showLoad: false);
-      } else {
-        hideLoading();
       }
     } catch (e) {
       handleError(e);
+    } finally {
       hideLoading();
     }
   }
@@ -1123,6 +1343,7 @@ import 'package:get/get.dart';
 
 import '../../core/repos/settings/doctor_availability_repo.dart';
 import '../../models/settings/availability_item_model.dart';
+import '../../models/settings/available_period_model.dart';
 import '../base_controller.dart';
 import '../home/home_controller.dart';
 
@@ -1132,7 +1353,9 @@ class DoctorAvailabilityController extends BaseController {
   DoctorAvailabilityController({required this.repo});
 
   final availabilitiesList = <AvailabilityItemModel>[].obs;
+  final availablePeriodsList = <AvailablePeriodModel>[].obs;
   final isFetching = true.obs;
+  final selectedTab = 0.obs;
 
   final List<String> apiDays = [
     'monday',
@@ -1144,14 +1367,45 @@ class DoctorAvailabilityController extends BaseController {
     'sunday',
   ];
   final selectedDay = 'monday'.obs;
-  final startTime = const TimeOfDay(hour: 12, minute: 0).obs;
+  final startTime = const TimeOfDay(hour: 09, minute: 0).obs;
   final endTime = const TimeOfDay(hour: 17, minute: 0).obs;
 
   @override
   void onInit() {
     super.onInit();
-    fetchAvailabilities();
+    fetchAllData();
   }
+
+  Future<void> fetchAllData() async {
+    isFetching.value = true;
+    try {
+      int doctorId = 0;
+      if (Get.isRegistered<HomeController>()) {
+        doctorId = Get.find<HomeController>().doctorData.value?.id ?? 0;
+      }
+      if (doctorId == 0) {
+        handleError('Please wait for home data to load first'.tr);
+        return;
+      }
+
+      final results = await Future.wait([
+        repo.getAvailabilities(doctorId),
+        repo.fetchAvailableWorkingPeriods(),
+      ]);
+
+      availabilitiesList.assignAll(results[0] as List<AvailabilityItemModel>);
+      availablePeriodsList.assignAll(results[1] as List<AvailablePeriodModel>);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      isFetching.value = false;
+    }
+  }
+
+  void switchTab(int index) {
+    selectedTab.value = index;
+  }
+
 
   String _formatTimeOfDay(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
@@ -1177,22 +1431,6 @@ class DoctorAvailabilityController extends BaseController {
     }
   }
 
-  Future<void> fetchAvailabilities() async {
-    isFetching.value = true;
-    try {
-      int doctorId = 0;
-      if (Get.isRegistered<HomeController>()) {
-        doctorId = Get.find<HomeController>().doctorData.value?.id ?? 0;
-      }
-
-      final data = await repo.getAvailabilities(doctorId);
-      availabilitiesList.assignAll(data);
-    } catch (e) {
-      handleError(e);
-    } finally {
-      isFetching.value = false;
-    }
-  }
 
   Future<void> deleteDay(int id) async {
     showLoading();
@@ -1200,6 +1438,7 @@ class DoctorAvailabilityController extends BaseController {
       final msg = await repo.deleteAvailability(id);
       availabilitiesList.removeWhere((item) => item.id == id);
       showSuccess(msg);
+      fetchAllData();
     } catch (e) {
       handleError(e);
     } finally {
@@ -1208,6 +1447,15 @@ class DoctorAvailabilityController extends BaseController {
   }
 
   Future<void> saveWorkingHours() async {
+
+    final startMinutes = startTime.value.hour * 60 + startTime.value.minute;
+    final endMinutes = endTime.value.hour * 60 + endTime.value.minute;
+
+    if (startMinutes >= endMinutes) {
+      handleError('End time must be after start time'.tr);
+      return;
+    }
+
     showLoading();
     try {
       final result = await repo.addAvailability(
@@ -1223,16 +1471,24 @@ class DoctorAvailabilityController extends BaseController {
       );
 
       Get.back();
-      fetchAvailabilities();
+      fetchAllData();
     } catch (e) {
       handleError(e);
     } finally {
       hideLoading();
     }
   }
+  // دالة لتعبئة البيانات تلقائياً
+  void preFillData(String day, String start, String end) {
+    selectedDay.value = day.toLowerCase();
 
+    final sParts = start.split(':');
+    startTime.value = TimeOfDay(hour: int.parse(sParts[0]), minute: int.parse(sParts[1]));
+
+    final eParts = end.split(':');
+    endTime.value = TimeOfDay(hour: int.parse(eParts[0]), minute: int.parse(eParts[1]));
+  }
 }
-
 ```
 
 ### File: lib\controllers\settings\settings_controller.dart
@@ -1789,6 +2045,36 @@ class InvoiceApi {
 
 ```
 
+### File: lib\core\apis\notification\doctor_notification_api.dart
+```dart
+import 'package:http/http.dart' as http;
+import 'package:get/get.dart';
+import '../../constants.dart';
+import '../../helper/secure_storage_service.dart';
+
+class DoctorNotificationApi {
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await SecureStorage.getToken();
+    final String currentLocale = Get.locale?.languageCode ?? 'en';
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Language': currentLocale,
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<String> getNotifications() async {
+    final url = Uri.parse('$baseUrl/api/doctor/notification');
+    final response = await http
+        .get(url, headers: await _getHeaders())
+        .timeout(const Duration(seconds: 15));
+    return response.body;
+  }
+}
+
+```
+
 ### File: lib\core\apis\patients\medical_file_api.dart
 ```dart
 import 'package:http/http.dart' as http;
@@ -1814,6 +2100,56 @@ class MedicalFileApi {
     return response.body;
   }
 }
+```
+
+### File: lib\core\apis\profile\doctor_profile_api.dart
+```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:get/get.dart';
+import '../../constants.dart';
+import '../../helper/secure_storage_service.dart';
+
+class DoctorProfileApi {
+  final http.Client client = http.Client();
+
+  Future<String> getProfile() async {
+    final token = await SecureStorage.getToken();
+
+    final response = await client
+        .get(
+          Uri.parse('$baseUrl/api/doctor/profile'),
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+            'Accept-Language': Get.locale?.languageCode ?? 'en',
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+
+    return response.body;
+  }
+
+  Future<String> updateProfile(Map<String, dynamic> updatedData) async {
+    final token = await SecureStorage.getToken();
+
+    final response = await client
+        .put(
+          Uri.parse('$baseUrl/api/doctor/updateProfile'),
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+            'Accept-Language': Get.locale?.languageCode ?? 'en',
+          },
+          body: json.encode(updatedData),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    return response.body;
+  }
+}
+
 ```
 
 ### File: lib\core\apis\revenue\revenue_api.dart
@@ -1877,6 +2213,12 @@ class AppointmentDetailsApi {
   Future<String> getAppointmentDetails(int appointmentId) async {
     final url = Uri.parse('$baseUrl/api/doctor/appointments/$appointmentId');
     final response = await http.get(url, headers: await _getHeaders());
+    return response.body;
+  }
+  // ───  إلغاء الموعد ───
+  Future<String> cancelAppointment(int appointmentId) async {
+    final url = Uri.parse('$baseUrl/api/doctor/appointments/$appointmentId/cancel');
+    final response = await http.put(url, headers: await _getHeaders());
     return response.body;
   }
 }
@@ -2000,6 +2342,17 @@ class DoctorAvailabilityApi {
         .timeout(const Duration(seconds: 20));
   }
 
+  // GET
+  Future<http.Response> getAvailableWorkingPeriods() async {
+    return await http
+        .get(
+          Uri.parse('$baseUrl/api/doctors/availableWorkingPeriods'),
+
+          headers: await _getHeaders(),
+        )
+        .timeout(const Duration(seconds: 20));
+  }
+
   // DELETE
   Future<http.Response> deleteAvailability(int id) async {
     return await http
@@ -2010,8 +2363,10 @@ class DoctorAvailabilityApi {
         .timeout(const Duration(seconds: 20));
   }
 
-  Future<http.Response> deleteAppointmentsByDate( String date) async {
-    final url = Uri.parse('$baseUrl/api/doctor/appointments/cancelAppointments');
+  Future<http.Response> deleteAppointmentsByDate(String date) async {
+    final url = Uri.parse(
+      '$baseUrl/api/doctor/appointments/cancelAppointments',
+    );
     final response = await http
         .put(
           url,
@@ -2335,10 +2690,44 @@ class AppTranslations extends Translations {
           'Are you sure you want to permanently delete your account? This action cannot be undone.',
       'Delete': 'Delete',
       'Continue': 'Continue',
-      'Are you sure you want to delete this working day?': 'Are you sure you want to delete this working day?',
+      'Are you sure you want to delete this working day?':
+          'Are you sure you want to delete this working day?',
       'Deleted successfully': 'Deleted successfully',
       'Cannot delete this availability': 'Cannot delete this availability',
       'Server error': 'Server error',
+      'There are no available days': 'There are no available days',
+      'Please wait for home data to load first':
+          'Please wait for home data to load first',
+      'End time must be after start time': 'End time must be after start time',
+      // --- Doctor Profile View ---
+      'Personal Profile': 'Personal Profile',
+      'Failed to load profile': 'Failed to load profile',
+      'First Name': 'First Name',
+      'Last Name': 'Last Name',
+      'Phone Number': 'Phone Number',
+      'Email': 'Email',
+      'Address': 'Address',
+      'Experience Years': 'Experience Years',
+      'Not set': 'Not set',
+      'Edit': 'Edit',
+      'Save': 'Save',
+      'Profile updated successfully': 'Profile updated successfully',
+      'Are you sure you want to cancel this appointment?':
+          'Are you sure you want to cancel this appointment?',
+      'Confirm': 'Confirm',
+      'Back': 'Back',
+      'Notifications': 'Notifications',
+      'No notifications yet': 'No notifications yet',
+      'Cancel specific day appointments': 'Cancel specific day appointments',
+      'Select a date from the calendar to cancel all its':
+          'Select a date from the calendar to cancel all its',
+      'Confirm Cancellation': 'Confirm Cancellation',
+      'Are you sure you want to cancel all appointments for today ':
+          'Are you sure you want to cancel all appointments for today ',
+      'My Availabilities': 'My Availabilities',
+      'Free Slots': 'Free Slots',
+      'No free slots available': 'No free slots available',
+      'No times available for this date.': 'No times available for this date.',
     },
 
     // القاموس العربي
@@ -2579,10 +2968,45 @@ class AppTranslations extends Translations {
           'هل أنت متأكد أنك تريد حذف حسابك نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.',
       'Delete': 'حذف',
       'Continue': 'متابعة',
-      'Are you sure you want to delete this working day?': 'هل أنت متأكد من حذف وقت الدوام هذا؟',
+      'Are you sure you want to delete this working day?':
+          'هل أنت متأكد من حذف وقت الدوام هذا؟',
       'Deleted successfully': 'تم الحذف بنجاح',
       'Cannot delete this availability': 'لا يمكن حذف وقت الدوام هذا',
       'Server error': 'خطأ في الخادم',
+      'There are no available days': 'لا توجد ايام متاحة',
+      'Please wait for home data to load first':
+          'الرجاء انتظار تحميل بيانات الرئيسية أولاً',
+      'End time must be after start time':
+          'وقت النهاية يجب أن يكون بعد وقت البداية',
+      // --- Doctor Profile View ---
+      'Personal Profile': 'الملف الشخصي',
+      'Failed to load profile': 'فشل في تحميل الملف الشخصي',
+      'First Name': 'الاسم الأول',
+      'Last Name': 'الكنية',
+      'Phone Number': 'رقم الهاتف',
+      'Email': 'البريد الإلكتروني',
+      'Address': 'العنوان',
+      'Experience Years': 'سنوات الخبرة',
+      'Not set': 'غير محدد',
+      'Edit': 'تعديل',
+      'Save': 'حفظ',
+      'Profile updated successfully': 'تم تحديث الملف الشخصي بنجاح',
+      'Are you sure you want to cancel this appointment?':
+          'هل أنت متأكد أنك تريد إلغاء هذا الموعد؟',
+      'Confirm': 'تأكيد',
+      'Back': 'تراجع',
+      'Notifications': 'الإشعارات',
+      'No notifications yet': 'لا توجد إشعارات بعد',
+      'Cancel specific day appointments': 'إلغاء مواعيد يوم محدد',
+      'Select a date from the calendar to cancel all its':
+          'اختر تاريخاً من التقويم لإلغاء جميع مواعيده',
+      'Confirm Cancellation': 'تأكيد الإلغاء',
+      'Are you sure you want to cancel all appointments for today ':
+          'هل أنت متأكد أنك تريد إلغاء جميع المواعيد ليوم ',
+      'My Availabilities': 'أوقات دوامي',
+      'Free Slots': 'الأوقات الشاغرة',
+      'No free slots available': 'لا توجد أوقات شاغرة متاحة',
+      'No times available for this date.': 'لا توجد أوقات متاحة في هذا التاريخ.',
     },
   };
 }
@@ -2885,6 +3309,38 @@ class InvoiceRepo {
 
 ```
 
+### File: lib\core\repos\notification\doctor_notification_repo.dart
+```dart
+import 'dart:convert';
+import '../../../models/notification/doctor_notification_model.dart';
+import '../../apis/notification/doctor_notification_api.dart';
+
+class DoctorNotificationRepo {
+  final DoctorNotificationApi api;
+
+  DoctorNotificationRepo({required this.api});
+
+  String _cleanJson(String response) {
+    final startIndex = response.indexOf(RegExp(r'[\{\[]'));
+    if (startIndex != -1) return response.substring(startIndex);
+    return response;
+  }
+
+  Future<List<DoctorNotificationModel>> getNotifications() async {
+    final res = await api.getNotifications();
+    final decoded = jsonDecode(_cleanJson(res));
+
+    if (decoded['status'] == 'success' && decoded['notifications'] is List) {
+      return (decoded['notifications'] as List)
+          .map((item) => DoctorNotificationModel.fromJson(item))
+          .toList();
+    }
+    return [];
+  }
+}
+
+```
+
 ### File: lib\core\repos\patients\medical_file_repo.dart
 ```dart
 import 'dart:convert';
@@ -2911,6 +3367,44 @@ class MedicalFileRepo {
     }
   }
 }
+```
+
+### File: lib\core\repos\profile\doctor_profile_repo.dart
+```dart
+import 'dart:convert';
+import '../../../models/profile/doctor_profile_model.dart';
+import '../../apis/profile/doctor_profile_api.dart';
+
+class DoctorProfileRepo {
+  final DoctorProfileApi _api = DoctorProfileApi();
+
+  String _cleanJson(String response) {
+    final startIndex = response.indexOf(RegExp(r'[\{\[]'));
+    if (startIndex != -1) return response.substring(startIndex);
+    return response;
+  }
+
+  Future<DoctorProfileModel> getProfile() async {
+    final response = await _api.getProfile();
+    final body = jsonDecode(_cleanJson(response));
+
+    if (body['status'] == 'success') {
+      return DoctorProfileModel.fromJson(body);
+    }
+    throw Exception(body['message'] ?? 'Failed to load profile');
+  }
+
+  Future<void> updateProfile(Map<String, dynamic> data) async {
+    final response = await _api.updateProfile(data);
+    final body = jsonDecode(_cleanJson(response));
+
+    if (body['status'] == 'success') {
+      return;
+    }
+    throw Exception(body['message'] ?? 'Failed to update profile');
+  }
+}
+
 ```
 
 ### File: lib\core\repos\revenue\revenue_repo.dart
@@ -3001,6 +3495,7 @@ class RevenueRepo {
 import 'dart:convert';
 import '../../../models/schedule/appointment_details_model.dart';
 import '../../apis/schedule/appointment_details_api.dart';
+import 'package:get/get.dart';
 
 class AppointmentDetailsRepo {
   final AppointmentDetailsApi api;
@@ -3020,6 +3515,24 @@ class AppointmentDetailsRepo {
       return AppointmentDetailsModel.fromJson(decoded['data']);
     } else {
       throw Exception(decoded['message'] ?? 'Failed to fetch details');
+    }
+  }
+
+  // ───  إلغاء الموعد ───
+  Future<String> cancelAppointment(int id) async {
+    final res = await api.cancelAppointment(id);
+
+    String cleanRes = res;
+    if (cleanRes.contains('{')) {
+      cleanRes = cleanRes.substring(cleanRes.indexOf('{'));
+    }
+
+    final decoded = jsonDecode(cleanRes);
+
+    if (decoded['status'] == 'success') {
+      return decoded['message'] ?? 'Appointment cancelled successfully'.tr;
+    } else {
+      throw Exception(decoded['message'] ?? 'Failed to cancel appointment');
     }
   }
 }
@@ -3112,6 +3625,7 @@ import 'dart:convert';
 import 'package:get/get.dart';
 
 import '../../../models/settings/availability_item_model.dart';
+import '../../../models/settings/available_period_model.dart';
 import '../../../models/settings/doctor_availability_model.dart';
 import '../../apis/settings/doctor_availability_api.dart';
 
@@ -3159,11 +3673,24 @@ class DoctorAvailabilityRepo {
     final decodedJson = jsonDecode(_cleanJson(response.body));
 
     if (response.statusCode == 200) {
-      final List data = decodedJson['data'] ?? [];
+      final List data = decodedJson['availabilities'] ?? decodedJson['data'] ?? [];
       return data.map((e) => AvailabilityItemModel.fromJson(e)).toList();
     } else {
       throw Exception(
         decodedJson['message'] ?? 'Failed to load availabilities',
+      );
+    }
+  }
+  Future<List<AvailablePeriodModel>> fetchAvailableWorkingPeriods() async {
+    final response = await api.getAvailableWorkingPeriods();
+    final decodedJson = jsonDecode(_cleanJson(response.body));
+
+    if (response.statusCode == 200 && decodedJson['status'] == 'success') {
+      final List data = decodedJson['available_periods'] ?? [];
+      return data.map((e) => AvailablePeriodModel.fromJson(e)).toList();
+    } else {
+      throw Exception(
+        decodedJson['message'] ?? 'Failed to load free periods',
       );
     }
   }
@@ -3323,9 +3850,17 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:kidcare_pro/service/notification_service.dart';
+import 'package:kidcare_pro/views/notification/doctor_notification_view.dart';
+import 'package:kidcare_pro/views/profile/doctor_profile_view.dart';
 
+import 'controllers/notification/doctor_notification_controller.dart';
+import 'controllers/profile/doctor_profile_controller.dart';
+import 'core/apis/notification/doctor_notification_api.dart';
+import 'core/apis/profile/doctor_profile_api.dart';
 import 'core/helper/secure_storage_service.dart';
 import 'core/localization/app_translations.dart';
+import 'core/repos/notification/doctor_notification_repo.dart';
+import 'core/repos/profile/doctor_profile_repo.dart';
 import 'core/theme/app_themes.dart';
 
 // Login
@@ -3495,25 +4030,29 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<ScheduleApi>(() => ScheduleApi());
             Get.lazyPut<ScheduleRepo>(() => ScheduleRepo(api: Get.find()));
             Get.lazyPut<ScheduleController>(
-                  () => ScheduleController(repo: Get.find()),
+              () => ScheduleController(repo: Get.find()),
             );
             Get.lazyPut<PatientsApi>(() => PatientsApi());
             Get.lazyPut<PatientsRepo>(() => PatientsRepo(api: Get.find()));
             Get.lazyPut<PatientsController>(
-                  () => PatientsController(repo: Get.find()),
+              () => PatientsController(repo: Get.find()),
             );
 
             // Revenue
             Get.lazyPut<RevenueApi>(() => RevenueApi());
             Get.lazyPut<RevenueRepo>(() => RevenueRepo(api: Get.find()));
             Get.lazyPut<RevenueController>(
-                  () => RevenueController(repo: Get.find()),
+              () => RevenueController(repo: Get.find()),
             );
 
             // Settings
             Get.lazyPut<DoctorAvailabilityApi>(() => DoctorAvailabilityApi());
-            Get.lazyPut<DoctorAvailabilityRepo>(() => DoctorAvailabilityRepo(api: Get.find()));
-            Get.lazyPut<SettingsController>(() => SettingsController(repo: Get.find()));
+            Get.lazyPut<DoctorAvailabilityRepo>(
+              () => DoctorAvailabilityRepo(api: Get.find()),
+            );
+            Get.lazyPut<SettingsController>(
+              () => SettingsController(repo: Get.find()),
+            );
           }),
         ),
         GetPage(
@@ -3563,6 +4102,30 @@ class MyApp extends StatelessWidget {
             Get.lazyPut<InvoiceRepo>(() => InvoiceRepo(api: Get.find()));
             Get.lazyPut<InvoiceController>(
               () => InvoiceController(repo: Get.find()),
+            );
+          }),
+        ),
+        GetPage(
+          name: '/doctor_profile',
+          page: () => const DoctorProfileView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<DoctorProfileApi>(() => DoctorProfileApi());
+            Get.lazyPut<DoctorProfileRepo>(() => DoctorProfileRepo());
+            Get.lazyPut<DoctorProfileController>(
+              () => DoctorProfileController(repo: Get.find()),
+            );
+          }),
+        ),
+        GetPage(
+          name: '/doctor_notifications',
+          page: () => const DoctorNotificationView(),
+          binding: BindingsBuilder(() {
+            Get.lazyPut<DoctorNotificationApi>(() => DoctorNotificationApi());
+            Get.lazyPut<DoctorNotificationRepo>(
+              () => DoctorNotificationRepo(api: Get.find()),
+            );
+            Get.lazyPut<DoctorNotificationController>(
+              () => DoctorNotificationController(repo: Get.find()),
             );
           }),
         ),
@@ -3692,6 +4255,7 @@ class PatientModel {
   final int appointmentId;
   final String name;
   final int age;
+  final String ageType;
   final String gender;
   final String image;
   final String appointmentTime;
@@ -3703,7 +4267,7 @@ class PatientModel {
     required this.age,
     required this.gender,
     required this.image,
-    required this.appointmentTime,
+    required this.appointmentTime, required this.ageType,
   });
 
   factory PatientModel.fromJson(Map<String, dynamic> json) {
@@ -3719,6 +4283,7 @@ class PatientModel {
       name: json['name']?.toString() ?? json['patient_name']?.toString() ?? '',
 
       age: json['age'] is int ? json['age'] : int.tryParse(json['age']?.toString() ?? '0') ?? 0,
+      ageType: json['age_type']?.toString() ?? 'year',
       gender: json['gender']?.toString() ?? 'male',
       image: json['image']?.toString() ?? '',
       // ─── توافقية مع اختلاف أسماء حقول الوقت ───
@@ -3926,6 +4491,32 @@ class InvoiceModel {
 
 ```
 
+### File: lib\models\notification\doctor_notification_model.dart
+```dart
+class DoctorNotificationModel {
+  final int id;
+  final String title;
+  final String message;
+  final String createdAt;
+
+  DoctorNotificationModel({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.createdAt,
+  });
+
+  factory DoctorNotificationModel.fromJson(Map<String, dynamic> json) {
+    return DoctorNotificationModel(
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      title: json['title']?.toString() ?? '',
+      message: json['message']?.toString() ?? '',
+      createdAt: json['created_at']?.toString() ?? '',
+    );
+  }
+}
+```
+
 ### File: lib\models\patients\medical_file_model.dart
 ```dart
 class MedicalFileModel {
@@ -4030,6 +4621,51 @@ class VisitModel {
 }
 ```
 
+### File: lib\models\profile\doctor_profile_model.dart
+```dart
+class DoctorProfileModel {
+  final String firstName;
+  final String lastName;
+  final String email;
+  final String phoneNumber;
+  final String address;
+  final int experienceYears;
+  final String education;
+  final String? profilePicture;
+  final String? cv;
+
+  DoctorProfileModel({
+    required this.firstName,
+    required this.lastName,
+    required this.email,
+    required this.phoneNumber,
+    required this.address,
+    required this.experienceYears,
+    required this.education,
+    this.profilePicture,
+    this.cv,
+  });
+
+  String get fullName => '$firstName $lastName';
+
+  factory DoctorProfileModel.fromJson(Map<String, dynamic> json) {
+    final user = json['user'] ?? json;
+    return DoctorProfileModel(
+      firstName: user['first_name']?.toString() ?? '',
+      lastName: user['last_name']?.toString() ?? '',
+      email: user['email']?.toString() ?? '',
+      phoneNumber: user['phone_number']?.toString() ?? '',
+      address: user['address']?.toString() ?? '',
+      // 👈 استخدام int.tryParse المتوافق مع باقي نماذج تطبيق الطبيب
+      experienceYears: int.tryParse(user['experience_years']?.toString() ?? '0') ?? 0,
+      education: user['education']?.toString() ?? '',
+      profilePicture: user['profile_picture']?.toString(),
+      cv: user['cv']?.toString(),
+    );
+  }
+}
+```
+
 ### File: lib\models\revenue\transaction_model.dart
 ```dart
 class TransactionModel {
@@ -4077,6 +4713,7 @@ class AppointmentDetailsModel {
   final String childImage;
   final String childGender;
   final int childAge;
+  final String childAgeType;
 
   // حقول وهمية مؤقتة لتطابق التصميم (يجب إضافتها من الباك إند لاحقاً)
   final String fileNumber;
@@ -4099,7 +4736,7 @@ class AppointmentDetailsModel {
     required this.childAge,
     required this.fileNumber,
     required this.appointmentType,
-    required this.parentsNotes,
+    required this.parentsNotes, required this.childAgeType,
   });
 
   factory AppointmentDetailsModel.fromJson(Map<String, dynamic> json) {
@@ -4143,6 +4780,7 @@ class AppointmentDetailsModel {
 
       childGender: child['gender']?.toString() ?? 'male',
       childAge: int.tryParse(child['age']?.toString() ?? '0') ?? 0,
+      childAgeType: child['age_type']?.toString() ?? 'year',
 
       // تعيين قيم افتراضية للحقول الناقصة
       fileNumber: 'PT-2024-${json['appointment_id']}',
@@ -4159,6 +4797,7 @@ class PatientListModel {
   final int id;
   final String name;
   final int age;
+  final String ageType;
   final String gender;
   final String image;
   final String parentPhone;
@@ -4171,7 +4810,7 @@ class PatientListModel {
     required this.gender,
     required this.image,
     required this.parentPhone,
-    required this.fileNumber,
+    required this.fileNumber, required this.ageType,
   });
 
   factory PatientListModel.fromJson(Map<String, dynamic> json) {
@@ -4186,6 +4825,7 @@ class PatientListModel {
       id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       name: json['name']?.toString() ?? '',
       age: int.tryParse(json['age']?.toString() ?? '0') ?? 0,
+      ageType: json['age_type']?.toString() ?? 'year',
       gender: json['gender']?.toString() ?? 'male',
       image: rawImage,
       parentPhone: json['parent_phone']?.toString() ?? '',
@@ -4218,6 +4858,7 @@ class ScheduleAppointmentModel {
   final int id;
   final String patientName;
   final int age;
+  final String ageType;
   final String gender;
   final String image;
   final String time;
@@ -4236,7 +4877,7 @@ class ScheduleAppointmentModel {
     required this.timePeriod,
     required this.duration,
     required this.note,
-    required this.status,
+    required this.status, required this.ageType,
   });
 
   factory ScheduleAppointmentModel.fromJson(Map<String, dynamic> json) {
@@ -4269,6 +4910,7 @@ class ScheduleAppointmentModel {
       id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       patientName: json['patient_name']?.toString() ?? '',
       age: int.tryParse(json['age']?.toString() ?? '0') ?? 0,
+      ageType: json['age_type']?.toString() ?? 'year',
       gender: json['gender']?.toString() ?? 'male',
 
       // تمرير قيمة الصورة المنظفة
@@ -4320,6 +4962,48 @@ class AvailabilityItemModel {
   }
 }
 
+```
+
+### File: lib\models\settings\available_period_model.dart
+```dart
+class AvailablePeriodModel {
+  final String day;
+  final String dayName;
+  final List<FreePeriodModel> freePeriods;
+
+  AvailablePeriodModel({
+    required this.day,
+    required this.dayName,
+    required this.freePeriods,
+  });
+
+  factory AvailablePeriodModel.fromJson(Map<String, dynamic> json) {
+    final list = json['free_periods'] as List? ?? [];
+    return AvailablePeriodModel(
+      day: json['day']?.toString() ?? '',
+      dayName: json['day_name']?.toString() ?? '',
+      freePeriods: list.map((e) => FreePeriodModel.fromJson(e)).toList(),
+    );
+  }
+}
+
+class FreePeriodModel {
+  final String startTime;
+  final String endTime;
+
+  FreePeriodModel({
+    required this.startTime,
+    required this.endTime,
+  });
+
+  factory FreePeriodModel.fromJson(Map<String, dynamic> json) {
+    return FreePeriodModel(
+      // قص الثواني إن وجدت للترتيب البصري
+      startTime: (json['start_time']?.toString() ?? '').split(':').take(2).join(':'),
+      endTime: (json['end_time']?.toString() ?? '').split(':').take(2).join(':'),
+    );
+  }
+}
 ```
 
 ### File: lib\models\settings\doctor_availability_model.dart
@@ -4458,7 +5142,7 @@ class NotificationService {
         }
 
         final response = await http.post(
-          Uri.parse('$baseUrl/api/doctor/save-fcm-token'),
+          Uri.parse('$baseUrl/api/parent/save-fcm-token'),
           headers: {
             'Accept': 'application/json',
             'Authorization': 'Bearer $doctorToken',
@@ -4476,33 +5160,6 @@ class NotificationService {
       log("❌ فشل توليد الـ FCM Token للطبيب: $e");
     }
   }
-
-  // static Future<void> _saveTokenToBackend(String fcmToken) async {
-  //   try {
-  //     String doctorToken = await SecureStorage.getToken();
-  //
-  //
-  //     if (doctorToken.isEmpty) return;
-  //
-  //
-  //     final response = await http.post(
-  //       Uri.parse('$baseUrl/api/doctor/save-fcm-token'),
-  //       headers: {
-  //         'Accept': 'application/json',
-  //         'Authorization': 'Bearer $doctorToken',
-  //       },
-  //       body: {'fcm_token': fcmToken},
-  //     );
-  //
-  //     if (response.statusCode == 200 || response.statusCode == 201) {
-  //       log("✅ تم حفظ الـ FCM Token للطبيب في الباك إند بنجاح!");
-  //     } else {
-  //       log("⚠️ فشل حفظ التوكن للطبيب في الباك إند: ${response.body}");
-  //     }
-  //   } catch (e) {
-  //     log("❌ خطأ أثناء إرسال توكن الطبيب للسيرفر: $e");
-  //   }
-  // }
 
   static void _showLocalNotification(RemoteMessage message) {
     RemoteNotification? notification = message.notification;
@@ -4536,19 +5193,24 @@ class NotificationService {
   static void _handleNotificationClick(String type) {
     log("🔀 جاري توجيه الطبيب بناءً على نوع الإشعار: $type");
 
-    if (Get.isRegistered<HomeController>()) {
-      Get.find<HomeController>().fetchAllDashboardData();
-    }
+    final typeLower = type.toLowerCase();
 
-    switch (type) {
-      case 'new_appointment':
-      case 'appointment_cancelled':
-        Get.toNamed('/doctor_home');
-        break;
-      default:
-        Get.toNamed('/doctor_home');
-        break;
-    }
+
+    Get.offAllNamed('/doctor_home');
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (Get.isRegistered<HomeController>()) {
+        final homeCtrl = Get.find<HomeController>();
+        homeCtrl.fetchAllDashboardData();
+
+        // التوجيه للتابات
+        if (typeLower.contains('cancel') || typeLower.contains('appointment')) {
+          homeCtrl.currentIndex.value = 1; //  (Schedule)
+        } else if (typeLower.contains('arrived')) {
+          homeCtrl.currentIndex.value = 0; //  (Dashboard)
+        }
+      }
+    });
   }
 }
 
@@ -5051,6 +5713,166 @@ class NewInvoiceView extends GetView<InvoiceController> {
 
 ```
 
+### File: lib\views\notification\doctor_notification_view.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/notification/doctor_notification_controller.dart';
+
+class DoctorNotificationView extends GetView<DoctorNotificationController> {
+  const DoctorNotificationView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(
+          'Notifications'.tr,
+          style: TextStyle(
+            color: context.textTheme.bodyLarge?.color,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back_ios,
+            color: context.theme.iconTheme.color,
+            size: 20,
+          ),
+          onPressed: () => Get.back(),
+        ),
+      ),
+      body: Obx(() {
+        if (controller.isLoading && controller.notifications.isEmpty) {
+          return Center(
+            child: CircularProgressIndicator(color: context.theme.primaryColor),
+          );
+        }
+
+        if (controller.notifications.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.notifications_off_outlined,
+                  size: 64,
+                  color: context.theme.hintColor.withValues(alpha: 0.4),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'No notifications yet'.tr,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: context.theme.hintColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          color: context.theme.primaryColor,
+          onRefresh: controller.fetchNotifications,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            itemCount: controller.notifications.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final item = controller.notifications[index];
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => controller.handleNotificationTap(item), // 👈 استدعاء دالة التوجيه
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: context.theme.cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: context.theme.dividerColor.withValues(alpha: 0.2),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: context.theme.shadowColor.withValues(alpha: 0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: context.theme.primaryColor.withValues(
+                              alpha: 0.1,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.notifications_active_outlined,
+                            color: context.theme.primaryColor,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: context.textTheme.bodyLarge?.color,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                item.message,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: context.textTheme.bodyMedium?.color,
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                controller.formatDateTime(item.createdAt),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: context.theme.hintColor.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      }),
+    );
+  }
+}
+```
+
 ### File: lib\views\patients\medical_file_view.dart
 ```dart
 import 'package:flutter/material.dart';
@@ -5335,6 +6157,375 @@ class MedicalFileView extends GetView<MedicalFileController> {
     );
   }
 }
+```
+
+### File: lib\views\profile\doctor_profile_view.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../controllers/profile/doctor_profile_controller.dart';
+import '../../core/constants.dart';
+
+class DoctorProfileView extends GetView<DoctorProfileController> {
+  const DoctorProfileView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(
+          'Personal Profile'.tr,
+          style: TextStyle(
+            color: context.textTheme.bodyLarge?.color,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back_ios,
+            color: context.theme.iconTheme.color,
+            size: 20,
+          ),
+          onPressed: () => Get.back(),
+        ),
+      ),
+      body: Obx(() {
+        if (controller.isLoading && controller.profile.value == null) {
+          return Center(
+            child: CircularProgressIndicator(color: context.theme.primaryColor),
+          );
+        }
+
+        final user = controller.profile.value;
+        if (user == null) {
+          return Center(
+            child: Text(
+              'Failed to load profile'.tr,
+              style: TextStyle(color: context.theme.hintColor),
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          color: context.theme.primaryColor,
+          onRefresh: controller.fetchProfile,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Column(
+              children: [
+                // ─── Avatar & Name ───
+                Center(
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: context.theme.primaryColor.withOpacity(
+                          0.1,
+                        ),
+                        backgroundImage:
+                            (user.profilePicture != null &&
+                                user.profilePicture!.isNotEmpty)
+                            ? NetworkImage(
+                                '$baseUrl/storage/${user.profilePicture}',
+                              )
+                            : null,
+                        child:
+                            (user.profilePicture == null ||
+                                user.profilePicture!.isEmpty)
+                            ? Icon(
+                                Icons.person,
+                                size: 50,
+                                color: context.theme.primaryColor,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        user.fullName,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: context.textTheme.bodyLarge?.color,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        user.education,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: context.theme.hintColor,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 30),
+
+                // ─── Info Fields ───
+                Container(
+                  decoration: BoxDecoration(
+                    color: context.theme.cardColor,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: context.theme.dividerColor.withOpacity(0.5),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildInfoTile(
+                        context,
+                        Icons.person_outline,
+                        'First Name'.tr,
+                        user.firstName,
+                        'first_name',
+                      ),
+                      _buildDivider(context),
+                      _buildInfoTile(
+                        context,
+                        Icons.person_outline,
+                        'Last Name'.tr,
+                        user.lastName,
+                        'last_name',
+                      ),
+                      _buildDivider(context),
+                      _buildInfoTile(
+                        context,
+                        Icons.phone_outlined,
+                        'Phone Number'.tr,
+                        user.phoneNumber,
+                        'phone_number',
+                        isPhone: true,
+                      ),
+                      _buildDivider(context),
+                      _buildInfoTile(
+                        context,
+                        Icons.email_outlined,
+                        'Email'.tr,
+                        user.email,
+                        'email',
+                      ),
+                      _buildDivider(context),
+                      _buildInfoTile(
+                        context,
+                        Icons.location_on_outlined,
+                        'Address'.tr,
+                        user.address,
+                        'address',
+                      ),
+                      _buildDivider(context),
+                      _buildInfoTile(
+                        context,
+                        Icons.work_outline,
+                        'Experience Years'.tr,
+                        '${user.experienceYears}',
+                        'experience_years',
+                        isNumber: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildInfoTile(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String value,
+    String apiFieldKey, {
+    bool isPhone = false,
+    bool isNumber = false,
+  }) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: context.theme.primaryColor.withOpacity(0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: context.theme.primaryColor, size: 22),
+      ),
+      title: Text(
+        label,
+        style: TextStyle(fontSize: 12, color: context.theme.hintColor),
+      ),
+      subtitle: Text(
+        value.isEmpty ? 'Not set'.tr : value,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.bold,
+          color: context.textTheme.bodyLarge?.color,
+        ),
+      ),
+      trailing: Icon(
+        Icons.edit_outlined,
+        size: 18,
+        color: context.theme.hintColor,
+      ),
+      onTap: () => _showEditDialog(
+        context,
+        label,
+        value,
+        apiFieldKey,
+        isPhone,
+        isNumber,
+      ),
+    );
+  }
+
+  Widget _buildDivider(BuildContext context) {
+    return Divider(
+      color: context.theme.dividerColor.withOpacity(0.3),
+      height: 1,
+      indent: 70,
+      endIndent: 20,
+    );
+  }
+
+  void _showEditDialog(
+    BuildContext context,
+    String label,
+    String currentValue,
+    String apiFieldKey,
+    bool isPhone,
+    bool isNumber,
+  ) {
+    final TextEditingController textController = TextEditingController(
+      text: currentValue,
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: context.theme.scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Edit'.tr + ' ' + label,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: context.textTheme.bodyLarge?.color,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: textController,
+                  keyboardType: isPhone
+                      ? TextInputType.phone
+                      : (isNumber ? TextInputType.number : TextInputType.text),
+                  style: TextStyle(color: context.textTheme.bodyLarge?.color),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: context.theme.cardColor,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: context.theme.primaryColor),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: () => Get.back(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                context.theme.scaffoldBackgroundColor,
+                            foregroundColor: context.textTheme.bodyLarge?.color,
+                            elevation: 0,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: context.theme.dividerColor,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            'Cancel'.tr,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // 👈 زر الحفظ
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Get.back();
+                            controller.updateProfileField(
+                              apiFieldKey,
+                              textController.text,
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: context.theme.primaryColor,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            'Save'.tr,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 ```
 
 ### File: lib\views\revenue\revenue_view.dart
@@ -5825,7 +7016,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/schedule/appointment_details_controller.dart';
 import '../../core/constants.dart';
+
 // تم استدعاء المودل هنا لتعريف نوع البيانات
+import '../../models/home/doctor_dashboard_model.dart';
 import '../../models/schedule/appointment_details_model.dart';
 
 class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
@@ -5839,21 +7032,24 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
         backgroundColor: context.theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: true,
-        iconTheme: IconThemeData(color: context.theme.textTheme.bodyLarge?.color),
+        iconTheme: IconThemeData(
+          color: context.theme.textTheme.bodyLarge?.color,
+        ),
         title: Text(
           'Appointment Details'.tr,
-          style: context.theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          style: context.theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {},
-          ),
+          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
         ],
       ),
       body: Obx(() {
         if (controller.isLoading) {
-          return Center(child: CircularProgressIndicator(color: context.theme.primaryColor));
+          return Center(
+            child: CircularProgressIndicator(color: context.theme.primaryColor),
+          );
         }
 
         final data = controller.appointmentDetails.value;
@@ -5870,19 +7066,26 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
               const SizedBox(height: 24),
               Text(
                 'Appointment Info'.tr,
-                style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: context.theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               _buildAppointmentInfoCard(context, data),
               const SizedBox(height: 24),
               Text(
                 'Parents Notes'.tr,
-                style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                style: context.theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               _buildNotesCard(context, data),
               const SizedBox(height: 32),
-              _buildActionButtons(context),
+              if (data.status != 'cancelled_by_clinic' &&
+                  data.status != 'cancelled_by_patient' &&
+                  data.status != 'completed')
+                _buildActionButtons(context, data),
             ],
           ),
         );
@@ -5891,21 +7094,30 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
   }
 
   // تم تغيير dynamic إلى AppointmentDetailsModel هنا
-  Widget _buildPatientHeader(BuildContext context, AppointmentDetailsModel data) {
+  Widget _buildPatientHeader(
+    BuildContext context,
+    AppointmentDetailsModel data,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: context.theme.cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+        border: Border.all(
+          color: context.theme.dividerColor.withValues(alpha: 0.1),
+        ),
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 35,
             backgroundColor: context.theme.dividerColor.withValues(alpha: 0.1),
-            backgroundImage: data.childImage.isNotEmpty ? NetworkImage('$baseUrl/${data.childImage}') : null,
-            child: data.childImage.isEmpty ? Icon(Icons.person, size: 35, color: context.theme.hintColor) : null,
+            backgroundImage: data.childImage.isNotEmpty
+                ? NetworkImage('$baseUrl/${data.childImage}')
+                : null,
+            child: data.childImage.isEmpty
+                ? Icon(Icons.person, size: 35, color: context.theme.hintColor)
+                : null,
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -5917,20 +7129,30 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
                   children: [
                     Text(
                       data.childName,
-                      style: context.theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                      style: context.theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    Icon(Icons.calendar_today_outlined, color: context.theme.hintColor, size: 20),
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      color: context.theme.hintColor,
+                      size: 20,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${data.childAge} ${'Yrs'.tr} - ${data.childGender.tr}',
-                  style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor),
+                  '${data.childAge} ${data.childAgeType.tr} - ${data.childGender.tr}',
+                  style: context.theme.textTheme.bodyMedium?.copyWith(
+                    color: context.theme.hintColor,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '${'File No'.tr}: ${data.fileNumber}',
-                  style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor),
+                  style: context.theme.textTheme.bodyMedium?.copyWith(
+                    color: context.theme.hintColor,
+                  ),
                 ),
               ],
             ),
@@ -5941,50 +7163,91 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
   }
 
   // تم تغيير dynamic إلى AppointmentDetailsModel هنا
-  Widget _buildAppointmentInfoCard(BuildContext context, AppointmentDetailsModel data) {
+  Widget _buildAppointmentInfoCard(
+    BuildContext context,
+    AppointmentDetailsModel data,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: context.theme.cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+        border: Border.all(
+          color: context.theme.dividerColor.withValues(alpha: 0.1),
+        ),
       ),
       child: Column(
         children: [
-          _buildInfoRow(context, Icons.calendar_today, 'Date'.tr, '${data.day.tr}, ${data.date}'),
+          _buildInfoRow(
+            context,
+            Icons.calendar_today,
+            'Date'.tr,
+            '${data.day.tr}, ${data.date}',
+          ),
           const SizedBox(height: 16),
           _buildInfoRow(context, Icons.access_time, 'Time'.tr, data.time.tr),
           const SizedBox(height: 16),
-          _buildInfoRow(context, Icons.person_outline, 'Appointment Type'.tr, data.appointmentType.tr),
+          _buildInfoRow(
+            context,
+            Icons.person_outline,
+            'Appointment Type'.tr,
+            data.appointmentType.tr,
+          ),
           const SizedBox(height: 16),
-          _buildPaymentRow(context, Icons.credit_card, 'Payment Status'.tr, data.paymentStatus),
+          _buildPaymentRow(
+            context,
+            Icons.credit_card,
+            'Payment Status'.tr,
+            data.paymentStatus,
+          ),
           const SizedBox(height: 16),
-          _buildInfoRow(context, Icons.attach_money, 'Consultation Fee'.tr, '${data.consultationFee} ${data.currency}'),
+          _buildInfoRow(
+            context,
+            Icons.attach_money,
+            'Consultation Fee'.tr,
+            '${data.consultationFee} ${data.currency}',
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(BuildContext context, IconData icon, String label, String value) {
+  Widget _buildInfoRow(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String value,
+  ) {
     return Row(
       children: [
         Icon(icon, color: context.theme.hintColor, size: 20),
         const SizedBox(width: 12),
         Text(
           label,
-          style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor),
+          style: context.theme.textTheme.bodyMedium?.copyWith(
+            color: context.theme.hintColor,
+          ),
         ),
         const Spacer(),
         Text(
           value,
-          style: context.theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+          style: context.theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildPaymentRow(BuildContext context, IconData icon, String label, String status) {
-    Color badgeColor = status == 'partially_paid' || status == 'paid' ? Colors.green : Colors.orange;
+  Widget _buildPaymentRow(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String status,
+  ) {
+    Color badgeColor = status == 'partially_paid' || status == 'paid'
+        ? Colors.green
+        : Colors.orange;
 
     return Row(
       children: [
@@ -5992,7 +7255,9 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
         const SizedBox(width: 12),
         Text(
           label,
-          style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor),
+          style: context.theme.textTheme.bodyMedium?.copyWith(
+            color: context.theme.hintColor,
+          ),
         ),
         const Spacer(),
         Container(
@@ -6003,7 +7268,11 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
           ),
           child: Text(
             status.tr,
-            style: TextStyle(color: badgeColor, fontWeight: FontWeight.bold, fontSize: 12),
+            style: TextStyle(
+              color: badgeColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
           ),
         ),
       ],
@@ -6018,7 +7287,9 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
       decoration: BoxDecoration(
         color: context.theme.primaryColor.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.05)),
+        border: Border.all(
+          color: context.theme.dividerColor.withValues(alpha: 0.05),
+        ),
       ),
       child: Text(
         data.parentsNotes,
@@ -6027,37 +7298,72 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
     );
   }
 
-  Widget _buildActionButtons(BuildContext context) {
+  // 👈 تم إضافة استقبال متغير data
+  Widget _buildActionButtons(
+    BuildContext context,
+    AppointmentDetailsModel data,
+  ) {
     return Row(
       children: [
+        // زر الإلغاء (فارغ حالياً ريثما نربطه لاحقاً بـ API الإلغاء)
         Expanded(
           child: OutlinedButton(
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               foregroundColor: Colors.red,
               side: const BorderSide(color: Colors.red),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            onPressed: () {},
-            child: Text('Cancel Appointment'.tr, style: const TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () => controller.confirmCancellation(),
+            child: Text(
+              'Cancel Appointment'.tr,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ),
         const SizedBox(width: 16),
+        // زر بدء المعاينة (التعديل الجذري تم هنا)
         Expanded(
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               backgroundColor: context.theme.primaryColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            onPressed: () {},
-            child: Text('Start Consultation'.tr, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+            onPressed: () {
+              // 1. استخراج بيانات المريض والموعد من الواجهة الحالية وتجهيزها
+              final patientToExamine = PatientModel(
+                id: data.childId,
+                appointmentId: data.appointmentId,
+                name: data.childName,
+                age: data.childAge,
+                ageType: data.childAgeType,
+                gender: data.childGender,
+                image: data.childImage,
+                appointmentTime: data.time,
+              );
+
+              // 2. الانتقال إلى شاشة المعاينة وتمرير البيانات معها
+              Get.toNamed('/examination', arguments: patientToExamine);
+            },
+            child: Text(
+              'Start Consultation'.tr,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
       ],
     );
   }
 }
+
 ```
 
 ### File: lib\views\schedule\patients_view.dart
@@ -6203,7 +7509,7 @@ class PatientsView extends GetView<PatientsController> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${patient.age} ${'Yrs'.tr} - ${patient.gender.tr}',
+                        '${patient.age} ${patient.ageType.tr} - ${patient.gender.tr}',
                         style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor, fontSize: 13),
                       ),
                       const SizedBox(height: 4),
@@ -6480,7 +7786,7 @@ class ScheduleView extends GetView<ScheduleController> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${appointment.age} ${'Yrs'.tr} - ${appointment.gender.tr}',
+                                    '${appointment.age} ${appointment.ageType.tr} - ${appointment.gender.tr}',
                                     style: context.theme.textTheme.bodySmall?.copyWith(
                                       color: context.theme.hintColor,
                                     ),
@@ -6552,6 +7858,7 @@ class ScheduleView extends GetView<ScheduleController> {
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/settings/doctor_availability_controller.dart';
+import '../../models/settings/available_period_model.dart';
 
 class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
   const DoctorAvailabilityView({super.key});
@@ -6573,130 +7880,347 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
+      floatingActionButton: Obx(
+        () => controller.selectedTab.value == 0
+            ? FloatingActionButton.extended(
+                onPressed: () => _showAddBottomSheet(context),
+                backgroundColor: context.theme.primaryColor,
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: Text(
+                  'Enter Working Day'.tr,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              )
+            : const SizedBox.shrink(),
+      ),
+      body: Column(
+        children: [
+          // ─── Tabs Switcher ───
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: context.theme.cardColor,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Obx(
+                () => Row(
+                  children: [
+                    _buildTab(
+                      context,
+                      0,
+                      'My Availabilities'.tr,
+                      Icons.calendar_month,
+                    ),
+                    _buildTab(
+                      context,
+                      1,
+                      'Free Slots'.tr,
+                      Icons.check_circle_outline,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
 
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddBottomSheet(context),
-        backgroundColor: context.theme.primaryColor,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: Text(
-          'Enter Working Day'.tr,
-          style: const TextStyle(color: Colors.white),
+          // ─── Content ───
+          Expanded(
+            child: Obx(() {
+              if (controller.isFetching.value &&
+                  controller.availabilitiesList.isEmpty) {
+                return Center(
+                  child: CircularProgressIndicator(
+                    color: context.theme.primaryColor,
+                  ),
+                );
+              }
+
+              return RefreshIndicator(
+                color: context.theme.primaryColor,
+                onRefresh: controller.fetchAllData,
+                child: controller.selectedTab.value == 0
+                    ? _buildMyAvailabilitiesList(context)
+                    : _buildFreePeriodsList(context),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Tab Widget ───
+  Widget _buildTab(
+    BuildContext context,
+    int index,
+    String label,
+    IconData icon,
+  ) {
+    final isSelected = controller.selectedTab.value == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => controller.switchTab(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? context.theme.primaryColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : context.theme.hintColor,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: isSelected
+                      ? Colors.white
+                      : context.textTheme.bodyMedium?.color,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
 
-      body: Obx(() {
-        if (controller.isFetching.value) {
-          return Center(
-            child: CircularProgressIndicator(color: context.theme.primaryColor),
-          );
-        }
-
-        if (controller.availabilitiesList.isEmpty) {
-          return Center(
+  // ─── Tab 0: My Availabilities ───
+  Widget _buildMyAvailabilitiesList(BuildContext context) {
+    if (controller.availabilitiesList.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+          Center(
             child: Text(
-              'لا يوجد أوقات دوام مضافة حالياً.',
+              'There are no available days'.tr,
               style: context.theme.textTheme.bodyLarge?.copyWith(
                 color: context.theme.hintColor,
               ),
             ),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.only(
-            top: 16,
-            left: 20,
-            right: 20,
-            bottom: 100,
           ),
-          itemCount: controller.availabilitiesList.length,
-          itemBuilder: (context, index) {
-            final item = controller.availabilitiesList[index];
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: context.theme.cardColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: context.theme.dividerColor.withOpacity(0.1),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+        ],
+      );
+    }
+
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(left: 20, right: 20, bottom: 100),
+      itemCount: controller.availabilitiesList.length,
+      itemBuilder: (context, index) {
+        final item = controller.availabilitiesList[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: context.theme.cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: context.theme.dividerColor.withOpacity(0.1),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
+            title: Text(
+              item.dayOfWeek.tr,
+              style: context.theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.access_time,
+                    size: 16,
+                    color: context.theme.hintColor,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${item.startTime} - ${item.endTime}',
+                    style: TextStyle(color: context.theme.hintColor),
                   ),
                 ],
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                title: Text(
-                  item.dayOfWeek.tr, // وصول آمن عبر المودل
-                  style: context.theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 16,
-                        color: context.theme.hintColor,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${item.startTime} - ${item.endTime}',
-                        style: TextStyle(color: context.theme.hintColor),
-                      ),
-                    ],
-                  ),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(
-                    Icons.delete_outline,
-                    color: Colors.redAccent,
-                  ),
-                  onPressed: () => _confirmDelete(context, item.id),
-                ),
-              ),
-            );
-          },
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              onPressed: () => _confirmDelete(context, item.id),
+            ),
+          ),
         );
-      }),
+      },
     );
   }
 
+  // ─── Tab 1: Free Slots ───
+  Widget _buildFreePeriodsList(BuildContext context) {
+    if (controller.availablePeriodsList.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+          Center(
+            child: Text(
+              'No free slots available'.tr,
+              style: context.theme.textTheme.bodyLarge?.copyWith(
+                color: context.theme.hintColor,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(left: 20, right: 20, bottom: 100),
+      itemCount: controller.availablePeriodsList.length,
+      itemBuilder: (context, index) {
+        final dayData = controller.availablePeriodsList[index];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                dayData.dayName.tr,
+                style: context.theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            if (dayData.freePeriods.isEmpty)
+              Text(
+                'No times available for this date.'.tr,
+                style: TextStyle(color: context.theme.hintColor, fontSize: 13),
+              ),
+
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: dayData.freePeriods
+                  .map(
+                    (period) =>
+                        _buildFreeSlotChip(context, dayData.day, period),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 16),
+            Divider(color: context.theme.dividerColor.withOpacity(0.5)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFreeSlotChip(
+    BuildContext context,
+    String day,
+    FreePeriodModel period,
+  ) {
+    return GestureDetector(
+      onTap: () {
+        controller.preFillData(day, period.startTime, period.endTime);
+
+        _showAddBottomSheet(context);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: context.theme.primaryColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: context.theme.primaryColor.withOpacity(0.5),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.add_circle_outline,
+              size: 16,
+              color: context.theme.primaryColor,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '${period.startTime} - ${period.endTime}',
+              style: TextStyle(
+                color: context.theme.primaryColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Helpers ───
   void _confirmDelete(BuildContext context, int id) {
+
     Get.dialog(
       AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete'.tr, style: const TextStyle(fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to delete this working day?'.tr), // تم ربطها بالترجمة
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        title: Text(
+          'Delete'.tr,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text('Are you sure you want to delete this working day?'.tr),
+        actionsPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         actions: [
           TextButton(
             onPressed: () => Get.back(),
-            style: TextButton.styleFrom(
-              overlayColor: context.theme.primaryColor.withOpacity(0.1),
+            child: Text(
+              'Cancel'.tr,
+              style: TextStyle(
+                color: context.theme.primaryColor,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            child: Text('Cancel'.tr, style: TextStyle(color: context.theme.primaryColor, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
               Get.back();
               controller.deleteDay(id);
             },
-            child: Text('Delete'.tr, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: Text(
+              'Delete'.tr,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -6704,6 +8228,8 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
   }
 
   void _showAddBottomSheet(BuildContext context) {
+
+
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(24),
@@ -6745,10 +8271,6 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
                     () => DropdownButton<String>(
                       value: controller.selectedDay.value,
                       isExpanded: true,
-                      icon: Icon(
-                        Icons.keyboard_arrow_down,
-                        color: context.theme.primaryColor,
-                      ),
                       items: controller.apiDays.map((String day) {
                         return DropdownMenuItem<String>(
                           value: day,
@@ -6756,8 +8278,9 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
                         );
                       }).toList(),
                       onChanged: (newValue) {
-                        if (newValue != null)
+                        if (newValue != null) {
                           controller.selectedDay.value = newValue;
+                        }
                       },
                     ),
                   ),
@@ -6929,34 +8452,7 @@ class SettingsView extends GetView<SettingsController> {
               ],
             ),
           ),
-          // const SizedBox(height: 20),
-          //
-          // ListTile(
-          //   contentPadding: const EdgeInsets.symmetric(
-          //     horizontal: 16,
-          //     vertical: 8,
-          //   ),
-          //   leading: Container(
-          //     padding: const EdgeInsets.all(8),
-          //     decoration: BoxDecoration(
-          //       color: Colors.red.withOpacity(0.1),
-          //       shape: BoxShape.circle,
-          //     ),
-          //     child: const Icon(Icons.event_busy, color: Colors.red),
-          //   ),
-          //   title: Text(
-          //     'Cancel specific day appointments'.tr,
-          //     style: const TextStyle(fontWeight: FontWeight.w600),
-          //   ),
-          //   subtitle: Text(
-          //     'Select a date from the calendar to cancel all its'.tr,
-          //     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-          //   ),
-          //   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-          //   onTap: () {
-          //     controller.pickDateToCancelAppointments(context);
-          //   },
-          // ),
+
 
           const SizedBox(height: 20),
 
@@ -8132,7 +9628,7 @@ class PatientHeader extends GetView<ExaminationController> {
                   const SizedBox(height: 4),
                   Text(
                     patient != null
-                        ? '${patient.age} Yrs • ${patient.gender.tr}'
+                        ? '${patient.age} ${patient.ageType.tr} • ${patient.gender.tr}'
                         : '',
                     style: context.theme.textTheme.bodyMedium?.copyWith(
                       color: context.theme.hintColor,
@@ -8284,11 +9780,22 @@ class HomeHeader extends GetView<HomeController> {
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 26,
-                backgroundColor: context.theme.primaryColor.withOpacity(0.1),
-                backgroundImage: doctor != null && doctor.image.isNotEmpty ? NetworkImage(controller.resolveImageUrl(doctor.image)) : null,
-                child: doctor == null || doctor.image.isEmpty ? Icon(Icons.person, color: context.theme.primaryColor, size: 28) : null,
+              GestureDetector(
+                onTap: () => Get.toNamed('/doctor_profile'),
+                child: CircleAvatar(
+                  radius: 26,
+                  backgroundColor: context.theme.primaryColor.withOpacity(0.1),
+                  backgroundImage: doctor != null && doctor.image.isNotEmpty
+                      ? NetworkImage(controller.resolveImageUrl(doctor.image))
+                      : null,
+                  child: doctor == null || doctor.image.isEmpty
+                      ? Icon(
+                          Icons.person,
+                          color: context.theme.primaryColor,
+                          size: 28,
+                        )
+                      : null,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -8296,13 +9803,17 @@ class HomeHeader extends GetView<HomeController> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        doctor != null ? 'Dr. ${doctor.name}' : 'Loading...',
-                        style: context.theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)
+                      doctor != null ? 'Dr. ${doctor.name}' : 'Loading...',
+                      style: context.theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                        doctor?.specialization ?? '',
-                        style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor)
+                      doctor?.specialization ?? '',
+                      style: context.theme.textTheme.bodyMedium?.copyWith(
+                        color: context.theme.hintColor,
+                      ),
                     ),
                   ],
                 ),
@@ -8313,28 +9824,37 @@ class HomeHeader extends GetView<HomeController> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: context.theme.cardColor,
-                      border: Border.all(color: context.theme.dividerColor.withOpacity(0.1)),
-                    ),
-                    child: IconButton(
-                        icon: Icon(Icons.notifications_none_rounded, color: context.theme.textTheme.bodyLarge?.color, size: 26),
-                        onPressed: () {}
-                    ),
-                  ),
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                          color: Colors.redAccent,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: context.theme.scaffoldBackgroundColor, width: 2)
+                      border: Border.all(
+                        color: context.theme.dividerColor.withOpacity(0.1),
                       ),
                     ),
-                  )
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.notifications_none_rounded,
+                        color: context.theme.textTheme.bodyLarge?.color,
+                        size: 26,
+                      ),
+                      onPressed: () => Get.toNamed('/doctor_notifications'),
+                    ),
+                  ),
+                  // Positioned(
+                  //   right: 12,
+                  //   top: 12,
+                  //   child: Container(
+                  //     width: 10,
+                  //     height: 10,
+                  //     decoration: BoxDecoration(
+                  //       color: Colors.redAccent,
+                  //       shape: BoxShape.circle,
+                  //       border: Border.all(
+                  //         color: context.theme.scaffoldBackgroundColor,
+                  //         width: 2,
+                  //       ),
+                  //     ),
+                  //   ),
+                  // ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -8342,6 +9862,7 @@ class HomeHeader extends GetView<HomeController> {
     });
   }
 }
+
 ```
 
 ### File: lib\widgets\home\next_patient_card.dart
@@ -8398,7 +9919,7 @@ class NextPatientCard extends GetView<HomeController> {
                     children: [
                       Text(patient.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                       const SizedBox(height: 6),
-                      Text('${patient.age} ${'Yrs'.tr}• ${patient.gender.tr}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                      Text('${patient.age} ${patient.ageType.tr}• ${patient.gender.tr}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
                     ],
                   ),
                 ),
@@ -8480,7 +10001,7 @@ class RemainingPatientsList extends GetView<HomeController> {
                     children: [
                       Text(patient.name, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 4),
-                      Text('${patient.age} ${'Yrs'.tr}• ${patient.gender.tr}', style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor, fontSize: 12)),
+                      Text('${patient.age} ${patient.ageType.tr}• ${patient.gender.tr}', style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor, fontSize: 12)),
                     ],
                   ),
                 ),

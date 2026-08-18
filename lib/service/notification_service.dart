@@ -75,6 +75,10 @@ class NotificationService {
         "📥 استلام إشعار حي وتطبيق الطبيب مفتوح: ${message.notification?.title}",
       );
       _showLocalNotification(message);
+
+      if (Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().hasUnreadNotifications.value = true;
+      }
     });
 
     // 6. النقر على الإشعار والتطبيق في الخلفية
@@ -126,8 +130,6 @@ class NotificationService {
     }
   }
 
-
-
   static void _showLocalNotification(RemoteMessage message) {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
@@ -160,18 +162,23 @@ class NotificationService {
   static void _handleNotificationClick(String type) {
     log("🔀 جاري توجيه الطبيب بناءً على نوع الإشعار: $type");
 
-    if (Get.isRegistered<HomeController>()) {
-      Get.find<HomeController>().fetchAllDashboardData();
-    }
+    final typeLower = type.toLowerCase();
 
-    switch (type) {
-      case 'new_appointment':
-      case 'appointment_cancelled':
-        Get.toNamed('/doctor_home');
-        break;
-      default:
-        Get.toNamed('/doctor_home');
-        break;
-    }
+
+    Get.offAllNamed('/doctor_home');
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (Get.isRegistered<HomeController>()) {
+        final homeCtrl = Get.find<HomeController>();
+        homeCtrl.fetchAllDashboardData();
+
+        // التوجيه للتابات
+        if (typeLower.contains('cancel') || typeLower.contains('appointment')) {
+          homeCtrl.currentIndex.value = 1; //  (Schedule)
+        } else if (typeLower.contains('arrived')) {
+          homeCtrl.currentIndex.value = 0; //  (Dashboard)
+        }
+      }
+    });
   }
 }

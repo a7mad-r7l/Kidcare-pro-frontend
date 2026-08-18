@@ -49,6 +49,17 @@ class DoctorAvailabilityApi {
         .timeout(const Duration(seconds: 20));
   }
 
+  // GET
+  Future<http.Response> getAvailableWorkingPeriods() async {
+    return await http
+        .get(
+          Uri.parse('$baseUrl/api/doctors/availableWorkingPeriods'),
+
+          headers: await _getHeaders(),
+        )
+        .timeout(const Duration(seconds: 20));
+  }
+
   // DELETE
   Future<http.Response> deleteAvailability(int id) async {
     return await http
@@ -59,8 +70,10 @@ class DoctorAvailabilityApi {
         .timeout(const Duration(seconds: 20));
   }
 
-  Future<http.Response> deleteAppointmentsByDate( String date) async {
-    final url = Uri.parse('$baseUrl/api/doctor/appointments/cancelAppointments');
+  Future<http.Response> deleteAppointmentsByDate(String date) async {
+    final url = Uri.parse(
+      '$baseUrl/api/doctor/appointments/cancelAppointments',
+    );
     final response = await http
         .put(
           url,

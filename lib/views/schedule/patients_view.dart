@@ -139,7 +139,7 @@ class PatientsView extends GetView<PatientsController> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${patient.age} ${'Yrs'.tr} - ${patient.gender.tr}',
+                        '${patient.age} ${patient.ageType.tr} - ${patient.gender.tr}',
                         style: context.theme.textTheme.bodyMedium?.copyWith(color: context.theme.hintColor, fontSize: 13),
                       ),
                       const SizedBox(height: 4),

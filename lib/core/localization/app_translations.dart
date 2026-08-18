@@ -279,6 +279,10 @@ class AppTranslations extends Translations {
       'Confirm Cancellation': 'Confirm Cancellation',
       'Are you sure you want to cancel all appointments for today ':
           'Are you sure you want to cancel all appointments for today ',
+      'My Availabilities': 'My Availabilities',
+      'Free Slots': 'Free Slots',
+      'No free slots available': 'No free slots available',
+      'No times available for this date.': 'No times available for this date.',
     },
 
     // القاموس العربي
@@ -554,6 +558,10 @@ class AppTranslations extends Translations {
       'Confirm Cancellation': 'تأكيد الإلغاء',
       'Are you sure you want to cancel all appointments for today ':
           'هل أنت متأكد أنك تريد إلغاء جميع المواعيد ليوم ',
+      'My Availabilities': 'أوقات دوامي',
+      'Free Slots': 'الأوقات الشاغرة',
+      'No free slots available': 'لا توجد أوقات شاغرة متاحة',
+      'No times available for this date.': 'لا توجد أوقات متاحة في هذا التاريخ.',
     },
   };
 }

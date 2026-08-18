@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 
 import '../../core/repos/settings/doctor_availability_repo.dart';
 import '../../models/settings/availability_item_model.dart';
+import '../../models/settings/available_period_model.dart';
 import '../base_controller.dart';
 import '../home/home_controller.dart';
 
@@ -12,7 +13,9 @@ class DoctorAvailabilityController extends BaseController {
   DoctorAvailabilityController({required this.repo});
 
   final availabilitiesList = <AvailabilityItemModel>[].obs;
+  final availablePeriodsList = <AvailablePeriodModel>[].obs;
   final isFetching = true.obs;
+  final selectedTab = 0.obs;
 
   final List<String> apiDays = [
     'monday',
@@ -24,14 +27,45 @@ class DoctorAvailabilityController extends BaseController {
     'sunday',
   ];
   final selectedDay = 'monday'.obs;
-  final startTime = const TimeOfDay(hour: 09, minute: 0).obs; // 👈 جعلنا الوقت الافتراضي منطقي (9 صباحاً)
-  final endTime = const TimeOfDay(hour: 17, minute: 0).obs;   // 👈 (5 مساءً)
+  final startTime = const TimeOfDay(hour: 09, minute: 0).obs;
+  final endTime = const TimeOfDay(hour: 17, minute: 0).obs;
 
   @override
   void onInit() {
     super.onInit();
-    fetchAvailabilities();
+    fetchAllData();
   }
+
+  Future<void> fetchAllData() async {
+    isFetching.value = true;
+    try {
+      int doctorId = 0;
+      if (Get.isRegistered<HomeController>()) {
+        doctorId = Get.find<HomeController>().doctorData.value?.id ?? 0;
+      }
+      if (doctorId == 0) {
+        handleError('Please wait for home data to load first'.tr);
+        return;
+      }
+
+      final results = await Future.wait([
+        repo.getAvailabilities(doctorId),
+        repo.fetchAvailableWorkingPeriods(),
+      ]);
+
+      availabilitiesList.assignAll(results[0] as List<AvailabilityItemModel>);
+      availablePeriodsList.assignAll(results[1] as List<AvailablePeriodModel>);
+    } catch (e) {
+      handleError(e);
+    } finally {
+      isFetching.value = false;
+    }
+  }
+
+  void switchTab(int index) {
+    selectedTab.value = index;
+  }
+
 
   String _formatTimeOfDay(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
@@ -57,29 +91,6 @@ class DoctorAvailabilityController extends BaseController {
     }
   }
 
-  Future<void> fetchAvailabilities() async {
-    isFetching.value = true;
-    try {
-      int doctorId = 0;
-      if (Get.isRegistered<HomeController>()) {
-        doctorId = Get.find<HomeController>().doctorData.value?.id ?? 0;
-      }
-
-      // 👈 التعديل الأول: معالجة حالة الـ ID الصفري بسبب سرعة تنقل الطبيب
-      if (doctorId == 0) {
-        isFetching.value = false;
-        handleError('Please wait for home data to load first'.tr);
-        return;
-      }
-
-      final data = await repo.getAvailabilities(doctorId);
-      availabilitiesList.assignAll(data);
-    } catch (e) {
-      handleError(e);
-    } finally {
-      isFetching.value = false;
-    }
-  }
 
   Future<void> deleteDay(int id) async {
     showLoading();
@@ -87,6 +98,7 @@ class DoctorAvailabilityController extends BaseController {
       final msg = await repo.deleteAvailability(id);
       availabilitiesList.removeWhere((item) => item.id == id);
       showSuccess(msg);
+      fetchAllData();
     } catch (e) {
       handleError(e);
     } finally {
@@ -95,7 +107,7 @@ class DoctorAvailabilityController extends BaseController {
   }
 
   Future<void> saveWorkingHours() async {
-    // 👈 التعديل الثاني: التحقق الرياضي والمنطقي للوقت قبل إرساله للباك إند
+
     final startMinutes = startTime.value.hour * 60 + startTime.value.minute;
     final endMinutes = endTime.value.hour * 60 + endTime.value.minute;
 
@@ -118,12 +130,22 @@ class DoctorAvailabilityController extends BaseController {
             : 'Working hours added successfully.'.tr,
       );
 
-      Get.back(); // إغلاق الـ BottomSheet
-      fetchAvailabilities(); // تحديث القائمة
+      Get.back();
+      fetchAllData();
     } catch (e) {
       handleError(e);
     } finally {
       hideLoading();
     }
+  }
+  // دالة لتعبئة البيانات تلقائياً
+  void preFillData(String day, String start, String end) {
+    selectedDay.value = day.toLowerCase();
+
+    final sParts = start.split(':');
+    startTime.value = TimeOfDay(hour: int.parse(sParts[0]), minute: int.parse(sParts[1]));
+
+    final eParts = end.split(':');
+    endTime.value = TimeOfDay(hour: int.parse(eParts[0]), minute: int.parse(eParts[1]));
   }
 }

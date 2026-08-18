@@ -244,14 +244,12 @@ class DoctorProfileView extends GetView<DoctorProfileController> {
       text: currentValue,
     );
 
-    // 👈 التعديل الجذري: استخدام دالة فلاتر الأصلية بدلاً من GetX لمنع أي تعارضات بصرية
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
         return Padding(
-          // 👈 لمنع الكيبورد من تغطية النافذة
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
@@ -298,7 +296,6 @@ class DoctorProfileView extends GetView<DoctorProfileController> {
                 const SizedBox(height: 24),
                 Row(
                   children: [
-                    // 👈 زر الإلغاء (ElevatedButton بإطار رمادي وبدون أي ظلال)
                     Expanded(
                       child: SizedBox(
                         height: 52,
@@ -332,7 +329,7 @@ class DoctorProfileView extends GetView<DoctorProfileController> {
                         height: 52,
                         child: ElevatedButton(
                           onPressed: () {
-                            Get.back(); // نغلق النافذة أولاً
+                            Get.back();
                             controller.updateProfileField(
                               apiFieldKey,
                               textController.text,

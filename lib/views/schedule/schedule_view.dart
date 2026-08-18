@@ -222,7 +222,7 @@ class ScheduleView extends GetView<ScheduleController> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${appointment.age} ${'Yrs'.tr} - ${appointment.gender.tr}',
+                                    '${appointment.age} ${appointment.ageType.tr} - ${appointment.gender.tr}',
                                     style: context.theme.textTheme.bodySmall?.copyWith(
                                       color: context.theme.hintColor,
                                     ),
