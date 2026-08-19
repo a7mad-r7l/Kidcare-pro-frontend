@@ -561,6 +561,7 @@ class HomeController extends BaseController {
   final HomeRepo repo;
 
   HomeController({required this.repo});
+  final RxBool hasUnreadNotifications = false.obs;
 
   final currentIndex = 0.obs;
   final selectedDate = DateTime.now().obs;
@@ -5110,6 +5111,10 @@ class NotificationService {
         "📥 استلام إشعار حي وتطبيق الطبيب مفتوح: ${message.notification?.title}",
       );
       _showLocalNotification(message);
+
+      if (Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().hasUnreadNotifications.value = true;
+      }
     });
 
     // 6. النقر على الإشعار والتطبيق في الخلفية
@@ -9834,25 +9839,34 @@ class HomeHeader extends GetView<HomeController> {
                         color: context.theme.textTheme.bodyLarge?.color,
                         size: 26,
                       ),
-                      onPressed: () => Get.toNamed('/doctor_notifications'),
+                      onPressed: () {
+                        //  إخفاء النقطة عند فتح الإشعارات
+                        controller.hasUnreadNotifications.value = false;
+                        Get.toNamed('/doctor_notifications');
+                      },
                     ),
                   ),
-                  // Positioned(
-                  //   right: 12,
-                  //   top: 12,
-                  //   child: Container(
-                  //     width: 10,
-                  //     height: 10,
-                  //     decoration: BoxDecoration(
-                  //       color: Colors.redAccent,
-                  //       shape: BoxShape.circle,
-                  //       border: Border.all(
-                  //         color: context.theme.scaffoldBackgroundColor,
-                  //         width: 2,
-                  //       ),
-                  //     ),
-                  //   ),
-                  // ),
+                  //  النقطة التفاعلية
+                  Obx(
+                        () => controller.hasUnreadNotifications.value
+                        ? Positioned(
+                      right: 12,
+                      top: 12,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: context.theme.scaffoldBackgroundColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    )
+                        : const SizedBox.shrink(),
+                  ),
                 ],
               ),
             ],

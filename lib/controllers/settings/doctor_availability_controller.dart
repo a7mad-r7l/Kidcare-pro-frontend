@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-
 import '../../core/repos/settings/doctor_availability_repo.dart';
 import '../../models/settings/availability_item_model.dart';
 import '../../models/settings/available_period_model.dart';
@@ -66,7 +65,6 @@ class DoctorAvailabilityController extends BaseController {
     selectedTab.value = index;
   }
 
-
   String _formatTimeOfDay(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
@@ -91,7 +89,6 @@ class DoctorAvailabilityController extends BaseController {
     }
   }
 
-
   Future<void> deleteDay(int id) async {
     showLoading();
     try {
@@ -107,7 +104,6 @@ class DoctorAvailabilityController extends BaseController {
   }
 
   Future<void> saveWorkingHours() async {
-
     final startMinutes = startTime.value.hour * 60 + startTime.value.minute;
     final endMinutes = endTime.value.hour * 60 + endTime.value.minute;
 
@@ -124,13 +120,19 @@ class DoctorAvailabilityController extends BaseController {
         endTime: formattedEndTime,
       );
 
+      if (Get.isBottomSheetOpen == true) {
+        Get.back();
+      }
+
+      selectedTab.value = 0;
+
       showSuccess(
         result.message.isNotEmpty
             ? result.message
             : 'Working hours added successfully.'.tr,
       );
 
-      Get.back();
+      // 4. تحديث البيانات من السيرفر
       fetchAllData();
     } catch (e) {
       handleError(e);
@@ -138,14 +140,21 @@ class DoctorAvailabilityController extends BaseController {
       hideLoading();
     }
   }
+
   // دالة لتعبئة البيانات تلقائياً
   void preFillData(String day, String start, String end) {
     selectedDay.value = day.toLowerCase();
 
     final sParts = start.split(':');
-    startTime.value = TimeOfDay(hour: int.parse(sParts[0]), minute: int.parse(sParts[1]));
+    startTime.value = TimeOfDay(
+      hour: int.parse(sParts[0]),
+      minute: int.parse(sParts[1]),
+    );
 
     final eParts = end.split(':');
-    endTime.value = TimeOfDay(hour: int.parse(eParts[0]), minute: int.parse(eParts[1]));
+    endTime.value = TimeOfDay(
+      hour: int.parse(eParts[0]),
+      minute: int.parse(eParts[1]),
+    );
   }
 }
