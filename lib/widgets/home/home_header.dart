@@ -45,7 +45,9 @@ class HomeHeader extends GetView<HomeController> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      doctor?.specialization ?? '',
+                      (doctor?.specialization != null && doctor!.specialization.isNotEmpty)
+                          ? doctor.specialization.tr
+                          : '',
                       style: context.theme.textTheme.bodyMedium?.copyWith(
                         color: context.theme.hintColor,
                       ),

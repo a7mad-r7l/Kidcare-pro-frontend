@@ -105,18 +105,33 @@ Future<void> main() async {
   } else {
     initialLocale = const Locale('en', 'US');
   }
+  String? savedTheme = await SecureStorage.getThemeMode();
+  ThemeMode initialThemeMode = ThemeMode.system;
+  if (savedTheme == 'dark') {
+    initialThemeMode = ThemeMode.dark;
+  } else if (savedTheme == 'light') {
+    initialThemeMode = ThemeMode.light;
+  }
 
-  runApp(MyApp(initialLocale: initialLocale, initialRoute: initialRoute));
+  runApp(
+    MyApp(
+      initialLocale: initialLocale,
+      initialRoute: initialRoute,
+      initialThemeMode: initialThemeMode,
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
   final Locale initialLocale;
   final String initialRoute;
+  final ThemeMode initialThemeMode;
 
   const MyApp({
     super.key,
     required this.initialLocale,
     required this.initialRoute,
+    required this.initialThemeMode,
   });
 
   @override
@@ -124,7 +139,7 @@ class MyApp extends StatelessWidget {
     return GetMaterialApp(
       theme: AppThemes.lightTheme,
       darkTheme: AppThemes.darkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: initialThemeMode,
       title: 'KidCare Pro',
       debugShowCheckedModeBanner: false,
       translations: AppTranslations(),

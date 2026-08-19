@@ -324,7 +324,6 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
 
   // ─── Helpers ───
   void _confirmDelete(BuildContext context, int id) {
-
     Get.dialog(
       AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -371,8 +370,6 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
   }
 
   void _showAddBottomSheet(BuildContext context) {
-
-
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(24),

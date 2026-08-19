@@ -44,4 +44,12 @@ class SecureStorage {
   static Future<String?> getLanguage() async {
     return await secureStorage.read(key: 'language');
   }
+  static Future<void> storeThemeMode(String theme) async {
+    await secureStorage.write(key: 'theme_mode', value: theme);
+  }
+
+
+  static Future<String?> getThemeMode() async {
+    return await secureStorage.read(key: 'theme_mode');
+  }
 }

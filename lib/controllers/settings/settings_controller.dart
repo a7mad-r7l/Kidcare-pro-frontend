@@ -19,11 +19,13 @@ class SettingsController extends BaseController {
     Get.toNamed('/password_reset');
   }
 
-  void changeTheme() {
+  Future<void> changeTheme() async {
     if (Get.isDarkMode) {
       Get.changeThemeMode(ThemeMode.light);
+      await SecureStorage.storeThemeMode('light');
     } else {
       Get.changeThemeMode(ThemeMode.dark);
+      await SecureStorage.storeThemeMode('dark');
     }
   }
 
@@ -223,4 +225,5 @@ class SettingsController extends BaseController {
       hideLoading();
     }
   }
+
 }
