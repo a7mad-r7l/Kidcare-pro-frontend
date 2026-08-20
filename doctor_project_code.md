@@ -566,11 +566,11 @@ class HomeController extends BaseController {
   final currentIndex = 0.obs;
   final selectedDate = DateTime.now().obs;
 
-  // تنسيق للـ API (yyyy-MM-dd)
+
   String get formattedSelectedDate =>
       DateFormat('yyyy-MM-dd').format(selectedDate.value);
 
-  // تنسيق للعرض في واجهة المستخدم (مثل التصميم)
+
   String get displaySelectedDate =>
       DateFormat('yyyy - MM - dd').format(selectedDate.value);
 
@@ -595,7 +595,7 @@ class HomeController extends BaseController {
     return '$baseUrl/$path';
   }
 
-  // دالة تنسيق الوقت (ص / م)
+
   String formatTime(String time24) {
     if (time24.isEmpty) return '';
     try {
@@ -620,14 +620,21 @@ class HomeController extends BaseController {
   Future<void> fetchAllDashboardData() async {
     showLoading();
     try {
+      final now = DateTime.now();
+      final isToday = selectedDate.value.year == now.year &&
+          selectedDate.value.month == now.month &&
+          selectedDate.value.day == now.day;
+
       final results = await Future.wait([
         repo.getDoctorHome(),
         repo.getTodayAppointmentsCount(),
         repo.getCompletedAppointmentsToday(),
         repo.getMonthlyRevenue(),
         repo.getNextPatient(),
-        repo.getRemainingPatients(),
+
+        isToday ? repo.getRemainingPatients() : repo.getAppointmentsByDate(formattedSelectedDate),
       ]);
+
       doctorData.value = results[0] as DoctorHomeModel;
       totalAppointments.value = results[1] as int;
       completedAppointments.value = results[2] as int;
@@ -642,7 +649,7 @@ class HomeController extends BaseController {
   }
 
   Future<void> selectCustomDate(BuildContext context) async {
-    // ─── تم إزالة الـ Theme الإجباري الخاطئ ليعمل التقويم بشكل سليم في كل الثيمات ───
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate.value,
@@ -659,8 +666,16 @@ class HomeController extends BaseController {
   Future<void> fetchRemainingPatientsForSelectedDate() async {
     showLoading();
     try {
-      // ─── الاعتماد على دالة التاريخ الصحيحة لتحديث القائمة حسب اختيار الطبيب ───
-      final patients = await repo.getAppointmentsByDate(formattedSelectedDate);
+      final now = DateTime.now();
+      final isToday = selectedDate.value.year == now.year &&
+          selectedDate.value.month == now.month &&
+          selectedDate.value.day == now.day;
+
+
+      final patients = isToday
+          ? await repo.getRemainingPatients()
+          : await repo.getAppointmentsByDate(formattedSelectedDate);
+
       remainingPatients.assignAll(patients);
     } catch (e) {
       handleError(e);
@@ -1525,11 +1540,13 @@ class SettingsController extends BaseController {
     Get.toNamed('/password_reset');
   }
 
-  void changeTheme() {
+  Future<void> changeTheme() async {
     if (Get.isDarkMode) {
       Get.changeThemeMode(ThemeMode.light);
+      await SecureStorage.storeThemeMode('light');
     } else {
       Get.changeThemeMode(ThemeMode.dark);
+      await SecureStorage.storeThemeMode('dark');
     }
   }
 
@@ -1729,6 +1746,7 @@ class SettingsController extends BaseController {
       hideLoading();
     }
   }
+
 }
 
 ```
@@ -2448,6 +2466,14 @@ class SecureStorage {
   static Future<String?> getLanguage() async {
     return await secureStorage.read(key: 'language');
   }
+  static Future<void> storeThemeMode(String theme) async {
+    await secureStorage.write(key: 'theme_mode', value: theme);
+  }
+
+
+  static Future<String?> getThemeMode() async {
+    return await secureStorage.read(key: 'theme_mode');
+  }
 }
 
 ```
@@ -2739,6 +2765,10 @@ class AppTranslations extends Translations {
       'Free Slots': 'Free Slots',
       'No free slots available': 'No free slots available',
       'No times available for this date.': 'No times available for this date.',
+      'No upcoming patients': 'No upcoming patients',
+      'Pediatrics': 'Pediatrics',
+      'Dentistry': 'Dentistry',
+      'Psychiatry': 'Psychiatry',
     },
 
     // القاموس العربي
@@ -3018,6 +3048,10 @@ class AppTranslations extends Translations {
       'Free Slots': 'الأوقات الشاغرة',
       'No free slots available': 'لا توجد أوقات شاغرة متاحة',
       'No times available for this date.': 'لا توجد أوقات متاحة في هذا التاريخ.',
+      'No upcoming patients': 'لا يوجد مرضى في الانتظار',
+      'Pediatrics': 'طب الأطفال',
+      'Dentistry': 'طب الأسنان',
+      'Psychiatry': 'الطب النفسي',
     },
   };
 }
@@ -3963,18 +3997,33 @@ Future<void> main() async {
   } else {
     initialLocale = const Locale('en', 'US');
   }
+  String? savedTheme = await SecureStorage.getThemeMode();
+  ThemeMode initialThemeMode = ThemeMode.system;
+  if (savedTheme == 'dark') {
+    initialThemeMode = ThemeMode.dark;
+  } else if (savedTheme == 'light') {
+    initialThemeMode = ThemeMode.light;
+  }
 
-  runApp(MyApp(initialLocale: initialLocale, initialRoute: initialRoute));
+  runApp(
+    MyApp(
+      initialLocale: initialLocale,
+      initialRoute: initialRoute,
+      initialThemeMode: initialThemeMode,
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
   final Locale initialLocale;
   final String initialRoute;
+  final ThemeMode initialThemeMode;
 
   const MyApp({
     super.key,
     required this.initialLocale,
     required this.initialRoute,
+    required this.initialThemeMode,
   });
 
   @override
@@ -3982,7 +4031,7 @@ class MyApp extends StatelessWidget {
     return GetMaterialApp(
       theme: AppThemes.lightTheme,
       darkTheme: AppThemes.darkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: initialThemeMode,
       title: 'KidCare Pro',
       debugShowCheckedModeBanner: false,
       translations: AppTranslations(),
@@ -8196,7 +8245,6 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
 
   // ─── Helpers ───
   void _confirmDelete(BuildContext context, int id) {
-
     Get.dialog(
       AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -8243,8 +8291,6 @@ class DoctorAvailabilityView extends GetView<DoctorAvailabilityController> {
   }
 
   void _showAddBottomSheet(BuildContext context) {
-
-
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(24),
@@ -9825,7 +9871,9 @@ class HomeHeader extends GetView<HomeController> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      doctor?.specialization ?? '',
+                      (doctor?.specialization != null && doctor!.specialization.isNotEmpty)
+                          ? doctor.specialization.tr
+                          : '',
                       style: context.theme.textTheme.bodyMedium?.copyWith(
                         color: context.theme.hintColor,
                       ),

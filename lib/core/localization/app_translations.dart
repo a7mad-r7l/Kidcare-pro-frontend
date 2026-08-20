@@ -18,6 +18,26 @@ class AppTranslations extends Translations {
       'Success': 'Success',
       'Error': 'Error',
 
+      // --- Growth Chart Section ---
+      'Failed to load growth data': 'Failed to load growth data',
+      'No measurements found': 'No measurements found',
+      'Current Weight': 'Current Weight',
+      'Current Height': 'Current Height',
+      'Months': 'Months',
+      'months_old': 'months',
+      'Growth History': 'Growth History',
+      'Needs Review': 'Needs Review',
+      'Medical Assessment': 'Medical Assessment',
+      'Close': 'Close',
+      'Session expired. Please login again.': 'Session expired. Please login again.',
+      'Ideal Weight (WHO)': 'Ideal Weight (WHO)',
+      'Max Limit (WHO)': 'Max Limit (WHO)',
+      'weight': 'Weight',
+      'Age (Months)': 'Age (Months)',
+      'Weight (kg)': 'Weight (kg)',
+      'Status: ': 'Status: ',
+
+
       //patients
       'Medical File': 'Medical File',
       'Summary': 'Summary',
@@ -327,6 +347,25 @@ class AppTranslations extends Translations {
       'High Fever': 'ارتفاع في الحرارة',
       'Chest Allergy': 'حساسية صدرية',
 
+      // --- Growth Chart Section ---
+      'Failed to load growth data': 'فشل في تحميل بيانات النمو',
+      'No measurements found': 'لا توجد قياسات مسجلة',
+      'Current Weight': 'الوزن الحالي',
+      'Current Height': 'الطول الحالي',
+      'Months': 'أشهر',
+      'months_old': 'أشهر',
+      'Growth History': 'سجل النمو',
+      'Needs Review': 'يحتاج مراجعة',
+      'Medical Assessment': 'التقييم الطبي',
+      'Close': 'إغلاق',
+      'Session expired. Please login again.': 'انتهت الجلسة. الرجاء تسجيل الدخول مجدداً.',
+      'Ideal Weight (WHO)': 'الوزن المثالي (WHO)',
+      'Max Limit (WHO)': 'الحد الأقصى (WHO)',
+      'weight': 'وزن',
+      'Age (Months)': 'العمر (بالأشهر)',
+      'Weight (kg)': 'الوزن (كجم)',
+      'Status: ': 'الحالة: ',
+
       //schedule
       'Appointments Schedule': 'جدول المواعيد',
       'All': 'الكل',
@@ -480,6 +519,8 @@ class AppTranslations extends Translations {
       'Delete Account': 'حذف الحساب',
       'Permanently delete your account from the app':
           'حذف حسابك بشكل دائم من التطبيق',
+
+
 
       // --- Availability View ---
       'Clinic Settings': 'إعدادات العيادة',

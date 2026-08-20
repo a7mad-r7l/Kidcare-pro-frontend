@@ -20,26 +20,7 @@ class PatientsView extends GetView<PatientsController> {
           'Patients'.tr,
           style: context.theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
-        actions: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: Icon(Icons.notifications_outlined, color: context.theme.primaryColor, size: 28),
-                onPressed: () {},
-              ),
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                ),
-              ),
-            ],
-          ),
-        ],
+        // تم إزالة زر الإشعارات من هنا
       ),
       body: Column(
         children: [
@@ -53,10 +34,7 @@ class PatientsView extends GetView<PatientsController> {
                 hintText: 'Search for patient name or file number'.tr,
                 hintStyle: TextStyle(color: context.theme.hintColor, fontSize: 14),
                 prefixIcon: Icon(Icons.search, color: context.theme.hintColor),
-                suffixIcon: IconButton(
-                  icon: Icon(Icons.filter_list, color: context.theme.hintColor),
-                  onPressed: () {},
-                ),
+                // تم إزالة suffixIcon (زر الفلتر) من هنا
                 filled: true,
                 fillColor: context.theme.cardColor,
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -165,7 +143,7 @@ class PatientsView extends GetView<PatientsController> {
           ),
           InkWell(
             onTap: () {
-              Get.toNamed('/medical_file', arguments: patient.id);
+              Get.toNamed('/medical_file', arguments: patient);
             },
             borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
             child: Container(

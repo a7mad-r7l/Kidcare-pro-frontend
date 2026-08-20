@@ -1,51 +1,5 @@
-class MedicalFileModel {
-  final PatientInfo patientInfo;
-  final MedicalSummary summary;
-
-  MedicalFileModel({required this.patientInfo, required this.summary});
-
-  factory MedicalFileModel.fromJson(Map<String, dynamic> json) {
-    return MedicalFileModel(
-      patientInfo: PatientInfo.fromJson(json['patient_info'] ?? {}),
-      summary: MedicalSummary.fromJson(json['summary'] ?? {}),
-    );
-  }
-}
-
-class PatientInfo {
-  final int id;
-  final String name;
-  final int age;
-  final String gender;
-  final String fileNumber;
-  final String image;
-
-  PatientInfo({
-    required this.id,
-    required this.name,
-    required this.age,
-    required this.gender,
-    required this.fileNumber,
-    required this.image,
-  });
-
-  factory PatientInfo.fromJson(Map<String, dynamic> json) {
-    String rawImage = json['image']?.toString() ?? '';
-    if (rawImage.contains('http')) {
-      final parts = rawImage.split('8000/');
-      rawImage = parts.length > 1 ? parts.last : rawImage;
-    }
-
-    return PatientInfo(
-      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
-      name: json['name']?.toString() ?? '',
-      age: int.tryParse(json['age']?.toString() ?? '0') ?? 0,
-      gender: json['gender']?.toString() ?? 'male',
-      fileNumber: json['file_number']?.toString() ?? '',
-      image: rawImage,
-    );
-  }
-}
+// File: lib/models/patients/medical_file_model.dart
+// 👈 تم إزالة MedicalFileModel و PatientInfo لأنها لم تعد تأتي من الخادم
 
 class MedicalSummary {
   final String weight;
@@ -71,13 +25,17 @@ class MedicalSummary {
   factory MedicalSummary.fromJson(Map<String, dynamic> json) {
     var previousList = json['previous_visits'] as List? ?? [];
     return MedicalSummary(
-      weight: json['weight']?.toString() ?? '',
+      // 👈 تحويل الأرقام إلى نصوص ومعالجة الـ null
+      weight: json['weight']?.toString() ?? '0',
       weightStatus: json['weight_status']?.toString() ?? '',
-      height: json['height']?.toString() ?? '',
+      height: json['height']?.toString() ?? '0',
       heightStatus: json['height_status']?.toString() ?? '',
       bloodType: json['blood_type']?.toString() ?? '',
-      allergies: json['allergies']?.toString() ?? '',
-      lastVisit: json['last_visit'] != null ? VisitModel.fromJson(json['last_visit']) : null,
+      allergies: json['allergies']?.toString() ?? 'None',
+      // 👈 التحقق من وجود بيانات داخل last_visit قبل تحويلها
+      lastVisit: (json['last_visit'] != null && json['last_visit']['date'] != null)
+          ? VisitModel.fromJson(json['last_visit'])
+          : null,
       previousVisits: previousList.map((e) => VisitModel.fromJson(e)).toList(),
     );
   }
@@ -94,7 +52,8 @@ class VisitModel {
     return VisitModel(
       date: json['date']?.toString() ?? '',
       doctorName: json['doctor_name']?.toString() ?? '',
-      diagnosis: json['diagnosis']?.toString() ?? '',
+      // 👈 معالجة null في التشخيص
+      diagnosis: json['diagnosis']?.toString() ?? 'None',
     );
   }
 }

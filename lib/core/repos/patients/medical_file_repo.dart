@@ -6,7 +6,7 @@ class MedicalFileRepo {
   final MedicalFileApi api;
   MedicalFileRepo({required this.api});
 
-  Future<MedicalFileModel> getFile(int id) async {
+  Future<MedicalSummary> getFile(int id) async {
     final res = await api.getMedicalFile(id);
 
     String cleanRes = res;
@@ -15,10 +15,12 @@ class MedicalFileRepo {
     }
 
     final decoded = jsonDecode(cleanRes);
-    if (decoded['status'] == true && decoded['data'] != null) {
-      return MedicalFileModel.fromJson(decoded['data']);
+
+    if (decoded['status'] == 'success' && decoded['summary'] != null) {
+      return MedicalSummary.fromJson(decoded['summary']);
     } else {
-      throw Exception(decoded['message'] ?? 'Failed to fetch medical file');
+      // إرجاع رسالة الخطأ القادمة من السيرفر إن وجدت
+      throw Exception(decoded['message'] ?? 'Server error occurred');
     }
   }
 }

@@ -16,8 +16,17 @@ class MedicalFileApi {
   }
 
   Future<String> getMedicalFile(int patientId) async {
-    final url = Uri.parse('$baseUrl/api/doctor/patients/$patientId/medical-file');
+    final url = Uri.parse('$baseUrl/api/doctor/$patientId/medicalRecord');
+
+    // طباعة الرابط للتأكد من أن الـ ID يتم تمريره بشكل صحيح
+    print('🌐 Requesting URL: $url');
+
     final response = await http.get(url, headers: await _getHeaders());
+
+    // طباعة حالة الرد وجسم الرد لاكتشاف الخطأ
+    print('📥 Response Status Code: ${response.statusCode}');
+    print('📥 Response Body: ${response.body}');
+
     return response.body;
   }
 }

@@ -27,9 +27,7 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
-        ],
+        // تم إزالة الخاصية actions التي كانت تحتوي على زر الثلاث نقاط من هنا
       ),
       body: Obx(() {
         if (controller.isLoading) {
@@ -81,9 +79,9 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
 
   // تم تغيير dynamic إلى AppointmentDetailsModel هنا
   Widget _buildPatientHeader(
-    BuildContext context,
-    AppointmentDetailsModel data,
-  ) {
+      BuildContext context,
+      AppointmentDetailsModel data,
+      ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -150,9 +148,9 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
 
   // تم تغيير dynamic إلى AppointmentDetailsModel هنا
   Widget _buildAppointmentInfoCard(
-    BuildContext context,
-    AppointmentDetailsModel data,
-  ) {
+      BuildContext context,
+      AppointmentDetailsModel data,
+      ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -199,11 +197,11 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
   }
 
   Widget _buildInfoRow(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String value,
-  ) {
+      BuildContext context,
+      IconData icon,
+      String label,
+      String value,
+      ) {
     return Row(
       children: [
         Icon(icon, color: context.theme.hintColor, size: 20),
@@ -226,11 +224,11 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
   }
 
   Widget _buildPaymentRow(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String status,
-  ) {
+      BuildContext context,
+      IconData icon,
+      String label,
+      String status,
+      ) {
     Color badgeColor = status == 'partially_paid' || status == 'paid'
         ? Colors.green
         : Colors.orange;
@@ -286,9 +284,9 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
 
   // 👈 تم إضافة استقبال متغير data
   Widget _buildActionButtons(
-    BuildContext context,
-    AppointmentDetailsModel data,
-  ) {
+      BuildContext context,
+      AppointmentDetailsModel data,
+      ) {
     return Row(
       children: [
         // زر الإلغاء (فارغ حالياً ريثما نربطه لاحقاً بـ API الإلغاء)
