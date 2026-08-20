@@ -16,11 +16,11 @@ class HomeController extends BaseController {
   final currentIndex = 0.obs;
   final selectedDate = DateTime.now().obs;
 
-  // تنسيق للـ API (yyyy-MM-dd)
+
   String get formattedSelectedDate =>
       DateFormat('yyyy-MM-dd').format(selectedDate.value);
 
-  // تنسيق للعرض في واجهة المستخدم (مثل التصميم)
+
   String get displaySelectedDate =>
       DateFormat('yyyy - MM - dd').format(selectedDate.value);
 
@@ -45,7 +45,7 @@ class HomeController extends BaseController {
     return '$baseUrl/$path';
   }
 
-  // دالة تنسيق الوقت (ص / م)
+
   String formatTime(String time24) {
     if (time24.isEmpty) return '';
     try {
@@ -70,14 +70,21 @@ class HomeController extends BaseController {
   Future<void> fetchAllDashboardData() async {
     showLoading();
     try {
+      final now = DateTime.now();
+      final isToday = selectedDate.value.year == now.year &&
+          selectedDate.value.month == now.month &&
+          selectedDate.value.day == now.day;
+
       final results = await Future.wait([
         repo.getDoctorHome(),
         repo.getTodayAppointmentsCount(),
         repo.getCompletedAppointmentsToday(),
         repo.getMonthlyRevenue(),
         repo.getNextPatient(),
-        repo.getRemainingPatients(),
+
+        isToday ? repo.getRemainingPatients() : repo.getAppointmentsByDate(formattedSelectedDate),
       ]);
+
       doctorData.value = results[0] as DoctorHomeModel;
       totalAppointments.value = results[1] as int;
       completedAppointments.value = results[2] as int;
@@ -92,7 +99,7 @@ class HomeController extends BaseController {
   }
 
   Future<void> selectCustomDate(BuildContext context) async {
-    // ─── تم إزالة الـ Theme الإجباري الخاطئ ليعمل التقويم بشكل سليم في كل الثيمات ───
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate.value,
@@ -109,8 +116,16 @@ class HomeController extends BaseController {
   Future<void> fetchRemainingPatientsForSelectedDate() async {
     showLoading();
     try {
-      // ─── الاعتماد على دالة التاريخ الصحيحة لتحديث القائمة حسب اختيار الطبيب ───
-      final patients = await repo.getAppointmentsByDate(formattedSelectedDate);
+      final now = DateTime.now();
+      final isToday = selectedDate.value.year == now.year &&
+          selectedDate.value.month == now.month &&
+          selectedDate.value.day == now.day;
+
+
+      final patients = isToday
+          ? await repo.getRemainingPatients()
+          : await repo.getAppointmentsByDate(formattedSelectedDate);
+
       remainingPatients.assignAll(patients);
     } catch (e) {
       handleError(e);
