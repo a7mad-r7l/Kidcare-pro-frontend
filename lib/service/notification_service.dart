@@ -13,7 +13,9 @@ import '../controllers/home/home_controller.dart';
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  log("📩 إشعار جديد في الخلفية للطبيب (Background/Terminated): ${message.messageId}");
+  log(
+    "📩 إشعار جديد في الخلفية للطبيب (Background/Terminated): ${message.messageId}",
+  );
 }
 
 class NotificationService {
@@ -23,8 +25,8 @@ class NotificationService {
 
   static const AndroidNotificationChannel _appointmentsChannel =
   AndroidNotificationChannel(
-    'doctor_appointments_channel',
-    'Appointments Notifications',
+    'doctor_appointments_channel', // channelId
+    'Appointments Notifications', // channelName
     description: 'This channel is used for new or cancelled appointments.',
     importance: Importance.max,
     playSound: true,
@@ -42,7 +44,7 @@ class NotificationService {
       log("🔔 تم منح صلاحيات الإشعارات بنجاح من قبل الطبيب.");
     }
 
-    // 2. إنشاء قناة الإشعارات للأندرويد
+    // 2. إنشاء الإشعارات  بالأندرويد
     await _localNotificationsPlugin
         .resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin
@@ -69,7 +71,9 @@ class NotificationService {
 
     // 5. استلام الإشعارات أثناء فتح التطبيق (Foreground)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      log("📥 استلام إشعار حي وتطبيق الطبيب مفتوح: ${message.notification?.title}");
+      log(
+        "📥 استلام إشعار حي وتطبيق الطبيب مفتوح: ${message.notification?.title}",
+      );
       _showLocalNotification(message);
 
       if (Get.isRegistered<HomeController>()) {
@@ -79,7 +83,7 @@ class NotificationService {
 
     // 6. النقر على الإشعار والتطبيق في الخلفية
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      log("🖱️ تم النقر على الإشعار وتطبيق الطبيب بالخلفية");
+      log("🖱 تم النقر على الإشعار وتطبيق الطبيب بالخلفية: ${message.data}");
       if (message.data.containsKey('type')) {
         _handleNotificationClick(message.data['type'].toString());
       }
@@ -88,17 +92,9 @@ class NotificationService {
     // 7. النقر على الإشعار والتطبيق مغلق تماماً (Terminated)
     RemoteMessage? initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null && initialMessage.data.containsKey('type')) {
-      log("🚀 إقلاع تطبيق الطبيب من الصفر بنقرة إشعار");
+      log("🚀 إقلاع تطبيق الطبيب من الصفر بنقرة إشعار: ${initialMessage.data}");
       _handleNotificationClick(initialMessage.data['type'].toString());
     }
-
-    // 🌟 الإضافة الجديدة: الاستماع لتحديث التوكن التلقائي من Firebase
-    _messaging.onTokenRefresh.listen((fcmToken) {
-      log("🔄 Firebase قام بتحديث FCM Token، جاري إرساله للسيرفر...");
-      sendFCMTokenToServer();
-    }).onError((err) {
-      log("❌ خطأ أثناء تحديث FCM Token: $err");
-    });
   }
 
   // 8. جلب التوكن وإرساله للسيرفر
@@ -106,7 +102,8 @@ class NotificationService {
     try {
       String? fcmToken = await _messaging.getToken();
       if (fcmToken != null && fcmToken.isNotEmpty) {
-        log("🔑 DOCTOR FCM TOKEN = $fcmToken");
+        log("🔑 🔑 🔑 DOCTOR DEVICE FCM TOKEN = $fcmToken");
+
 
         String doctorToken = await SecureStorage.getToken();
         if (doctorToken.isEmpty || doctorToken == 'null') {
@@ -114,9 +111,8 @@ class NotificationService {
           return;
         }
 
-        // 🌟 التعديل الهام: تصحيح المسار ليكون خاصاً بالطبيب وليس الأهل
         final response = await http.post(
-          Uri.parse('$baseUrl/api/doctor/save-fcm-token'), // 👈 تأكد من مطور الباك إند أن هذا هو المسار الصحيح
+          Uri.parse('$baseUrl/api/parent/save-fcm-token'),
           headers: {
             'Accept': 'application/json',
             'Authorization': 'Bearer $doctorToken',
@@ -127,11 +123,11 @@ class NotificationService {
         if (response.statusCode == 200 || response.statusCode == 201) {
           log("✅ تم حفظ الـ FCM Token للطبيب في الباك إند بنجاح!");
         } else {
-          log("⚠️ الباك إند رفض التوكن (السبب: ${response.statusCode}) - ${response.body}");
+          log("⚠️ الباك إند رفض التوكن (تأكد من الـ Route): ${response.body}");
         }
       }
     } catch (e) {
-      log("❌ فشل توليد أو إرسال الـ FCM Token للطبيب: $e");
+      log("❌ فشل توليد الـ FCM Token للطبيب: $e");
     }
   }
 
@@ -139,7 +135,7 @@ class NotificationService {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
 
-    if (notification != null) {
+    if (notification != null && android != null) {
       String notificationType = message.data['type']?.toString() ?? 'general';
 
       _localNotificationsPlugin.show(
@@ -153,8 +149,9 @@ class NotificationService {
             channelDescription: _appointmentsChannel.description,
             importance: Importance.max,
             priority: Priority.high,
-            // 👈 التعديل هنا: إجبار استخدام أيقونة التطبيق الافتراضية لتجنب الانهيار الصامت
-            icon: '@mipmap/ic_launcher',
+            icon: android.smallIcon,
+            //icon: '@mipmap/ic_launcher',
+            //color: const Color(0xFF00B4D8),
             playSound: true,
           ),
         ),
@@ -165,7 +162,9 @@ class NotificationService {
 
   static void _handleNotificationClick(String type) {
     log("🔀 جاري توجيه الطبيب بناءً على نوع الإشعار: $type");
+
     final typeLower = type.toLowerCase();
+
 
     Get.offAllNamed('/doctor_home');
 
@@ -174,10 +173,11 @@ class NotificationService {
         final homeCtrl = Get.find<HomeController>();
         homeCtrl.fetchAllDashboardData();
 
+        // التوجيه للتابات
         if (typeLower.contains('cancel') || typeLower.contains('appointment')) {
-          homeCtrl.currentIndex.value = 1;
+          homeCtrl.currentIndex.value = 1; //  (Schedule)
         } else if (typeLower.contains('arrived')) {
-          homeCtrl.currentIndex.value = 0;
+          homeCtrl.currentIndex.value = 0; //  (Dashboard)
         }
       }
     });

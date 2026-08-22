@@ -62,7 +62,7 @@ class DoctorNotificationController extends BaseController {
           homeCtrl.currentIndex.value = 1; // توجيه لتاب الجدول (Schedule)
         } else if (titleLower.contains('arrived')) {
           homeCtrl.currentIndex.value =
-              0; // توجيه لتاب الرئيسية (Dashboard) لرؤية المريض المنتظر
+          0; // توجيه لتاب الرئيسية (Dashboard) لرؤية المريض المنتظر
         }
       }
     });
