@@ -164,14 +164,195 @@ class MedicalFileView extends GetView<MedicalFileController> {
         case 1:
         // 👈 ربط واجهة مخطط النمو وتمرير المعرف
           return ChildGrowthTabView(childId: controller.patientId);
+        case 2:
+          return _buildVisitsTab(context, summary);
         default:
           return const SizedBox.shrink();
       }
     });
   }
+  Widget _buildVisitsTab(BuildContext context, MedicalSummary summary) {
+    final allVisits = <VisitModel>[];
+    if (summary.lastVisit != null) allVisits.add(summary.lastVisit!);
+    allVisits.addAll(summary.previousVisits);
+
+    if (allVisits.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 40),
+          child: Text('No visits found'.tr, style: TextStyle(color: context.theme.hintColor)),
+        ),
+      );
+    }
+
+    return ListView.separated(
+
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
+      itemCount: allVisits.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        return _buildExpandableVisitCard(context, allVisits[index]);
+      },
+    );
+  }
+
+  Widget _buildExpandableVisitCard(BuildContext context, VisitModel visit) {
+    return Container(
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: context.theme.shadowColor.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          onExpansionChanged: (expanded) {
+
+            if (expanded) controller.fetchVisitDetails(visit.recordId, visit.appointmentId);
+          },
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: context.theme.primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.medical_information_outlined, color: context.theme.primaryColor),
+          ),
+          title: Text(
+            visit.date,
+            style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          subtitle: Text(
+            '${'Diagnosis'.tr}: ${visit.diagnosis.tr}',
+            style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor),
+          ),
+          children: [
+            Obx(() {
+              final loadingKey = visit.appointmentId != 0 ? visit.appointmentId : visit.recordId;
+              if (controller.loadingDetails.contains(loadingKey)) {
+                return Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: CircularProgressIndicator(color: context.theme.primaryColor),
+                );
+              }
+
+              final record = controller.medicalRecords[visit.appointmentId];
+              final prescription = controller.prescriptions[visit.recordId];
+
+              if (record == null && prescription == null) {
+
+                return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text('No details found'.tr, style: TextStyle(color: context.theme.hintColor)),
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Divider(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+                    const SizedBox(height: 8),
+
+                    if (record != null && record.doctorNotes.isNotEmpty && record.doctorNotes != 'null') ...[
+                      Row(
+                        children: [
+                          Icon(Icons.notes, size: 18, color: context.theme.primaryColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Doctor Notes'.tr,
+                            style: TextStyle(fontWeight: FontWeight.bold, color: context.theme.primaryColor),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: context.theme.scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          record.doctorNotes,
+                          style: context.theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+
+                    if (prescription != null && prescription.medications.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.medication_outlined, size: 18, color: context.theme.primaryColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Medications Prescription'.tr,
+                            style: TextStyle(fontWeight: FontWeight.bold, color: context.theme.primaryColor),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ...prescription.medications.map((med) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: context.theme.scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.vaccines_outlined, color: context.theme.hintColor, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    med.name,
+                                    style: context.theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${med.dosage} • ${med.frequency} • ${med.timing.tr}',
+                                    style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${'Duration'.tr}: ${med.duration}',
+                                    style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.primaryColor),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )),
+                    ],
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildSummaryTab(BuildContext context, MedicalSummary summary) {
-    // 👈 أضفنا الـ SingleChildScrollView هنا ليكون خاصاً بتبويب الملخص فقط
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
       child: Column(

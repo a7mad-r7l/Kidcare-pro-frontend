@@ -6,6 +6,7 @@ class PatientAppointmentModel {
   final String gender;
   final String image;
   final String appointmentTime;
+  final String status;
 
   PatientAppointmentModel({
     required this.appointmentId,
@@ -14,7 +15,7 @@ class PatientAppointmentModel {
     required this.age,
     required this.gender,
     required this.image,
-    required this.appointmentTime,
+    required this.appointmentTime, required this.status,
   });
 
   factory PatientAppointmentModel.fromJson(Map<String, dynamic> json) {
@@ -27,6 +28,7 @@ class PatientAppointmentModel {
       gender: json['gender']?.toString() ?? '',
       image: json['image']?.toString() ?? '',
       appointmentTime: json['appointment_time']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'pending',
     );
   }
 }

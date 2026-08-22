@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../controllers/home/home_controller.dart';
+import '../status_badge_widget.dart';
+// 👈 تأكد من تعديل مسار الاستيراد هذا ليطابق المكان الذي حفظت فيه ملف الشارة
+
 
 class RemainingPatientsList extends GetView<HomeController> {
   const RemainingPatientsList({super.key});
@@ -30,12 +33,15 @@ class RemainingPatientsList extends GetView<HomeController> {
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Row(
               children: [
+                // 1. الصورة
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: context.theme.primaryColor.withOpacity(0.1),
                   backgroundImage: patient.image.isNotEmpty ? NetworkImage(controller.resolveImageUrl(patient.image)) : null,
                 ),
                 const SizedBox(width: 14),
+
+                // 2. الاسم والعمر
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -46,9 +52,19 @@ class RemainingPatientsList extends GetView<HomeController> {
                     ],
                   ),
                 ),
-                Text(
-                  controller.formatTime(patient.appointmentTime),
-                  style: TextStyle(color: context.theme.primaryColor, fontWeight: FontWeight.bold, fontSize: 13),
+
+                // 3. الوقت وشارة الحالة (التعديل الجديد)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end, // محاذاة لليمين
+                  children: [
+                    Text(
+                      controller.formatTime(patient.appointmentTime),
+                      style: TextStyle(color: context.theme.primaryColor, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    // 👈 استدعاء الشارة هنا وتمرير الحالة لها
+                    StatusBadgeWidget(status: patient.status),
+                  ],
                 ),
               ],
             ),

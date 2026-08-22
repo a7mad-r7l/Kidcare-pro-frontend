@@ -45,15 +45,24 @@ class VisitModel {
   final String date;
   final String doctorName;
   final String diagnosis;
+  final int recordId;      // 👈 تمت الإضافة
+  final int appointmentId; // 👈 تمت الإضافة
 
-  VisitModel({required this.date, required this.doctorName, required this.diagnosis});
+  VisitModel({
+    required this.date,
+    required this.doctorName,
+    required this.diagnosis,
+    required this.recordId,
+    required this.appointmentId,
+  });
 
   factory VisitModel.fromJson(Map<String, dynamic> json) {
     return VisitModel(
       date: json['date']?.toString() ?? '',
       doctorName: json['doctor_name']?.toString() ?? '',
-      // 👈 معالجة null في التشخيص
       diagnosis: json['diagnosis']?.toString() ?? 'None',
+      recordId: int.tryParse(json['record_id']?.toString() ?? '0') ?? 0,
+      appointmentId: int.tryParse(json['appointment_id']?.toString() ?? '0') ?? 0,
     );
   }
 }

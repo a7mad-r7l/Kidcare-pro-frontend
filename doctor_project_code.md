@@ -546,6 +546,43 @@ class ExaminationController extends BaseController {
 
 ```
 
+### File: lib\controllers\growth\child_growth_controller.dart
+```dart
+// File: lib/controllers/growth/child_growth_controller.dart
+import 'package:get/get.dart';
+import '../../core/repos/growth/child_growth_repo.dart';
+import '../../models/growth/child_growth_response_model.dart';
+import '../base_controller.dart';
+
+class ChildGrowthController extends BaseController {
+  final ChildGrowthRepo repo;
+
+  ChildGrowthController({required this.repo});
+
+  late int childId;
+  final Rxn<ChildGrowthResponseModel> growthData = Rxn<ChildGrowthResponseModel>();
+
+  @override
+  void onInit() {
+    super.onInit();
+    // سيتم تمرير الـ childId من الواجهة الأب (MedicalFileView)
+  }
+
+  /// جلب بيانات النمو والمخطط من السيرفر (GET)
+  Future<void> getGrowthDashboard() async {
+    showLoading();
+    try {
+      final result = await repo.fetchChildGrowthData(childId);
+      growthData.value = result;
+    } catch (e) {
+      handleError(e);
+    } finally {
+      hideLoading();
+    }
+  }
+}
+```
+
 ### File: lib\controllers\home\home_controller.dart
 ```dart
 import 'package:flutter/material.dart';
@@ -957,30 +994,63 @@ class DoctorNotificationController extends BaseController {
 ```dart
 import 'package:get/get.dart';
 import '../../core/repos/patients/medical_file_repo.dart';
+import '../../core/repos/patients/prescription_record_repo.dart';
 import '../../models/patients/medical_file_model.dart';
+import '../../models/patients/prescription_record_model.dart';
 import '../base_controller.dart';
 
 class MedicalFileController extends BaseController {
   final MedicalFileRepo repo;
   MedicalFileController({required this.repo});
 
-  final medicalFile = Rxn<MedicalFileModel>();
+  // مستودع الوصفات والملاحظات
+  final PrescriptionRecordRepo detailsRepo = PrescriptionRecordRepo();
+
+  // قوائم لتخزين البيانات المحملة (لمنع إعادة التحميل مرتين)
+  final RxMap<int, PrescriptionModel> prescriptions = <int, PrescriptionModel>{}.obs;
+  final RxMap<int, MedicalRecordModel> medicalRecords = <int, MedicalRecordModel>{}.obs;
+  final RxSet<int> loadingDetails = <int>{}.obs;
+
+  final summary = Rxn<MedicalSummary>();
   late final int patientId;
+  String patientName = '';
+  String patientAge = '';
+  String patientGender = '';
+  String patientFileNumber = '';
+  String patientImage = '';
+
   final selectedTab = 0.obs;
 
   final List<String> tabs = [
     'Summary',
-    'Visits & Prescriptions',
     'Growth Chart',
-    'Vaccines'
+    'Visits & Prescriptions' // 👈 التبويب الثالث
   ];
 
   @override
   void onInit() {
     super.onInit();
-    patientId = Get.arguments as int? ?? 0;
-    if (patientId != 0) {
-      fetchMedicalFile();
+    final arg = Get.arguments;
+    if (arg != null) {
+      _extractPatientData(arg);
+      if (patientId != 0) fetchMedicalFile();
+    }
+  }
+
+  void _extractPatientData(dynamic arg) {
+    try { patientId = arg.id ?? 0; } catch (_) { patientId = 0; }
+    try { patientName = arg.name ?? ''; } catch (_) {}
+    try { patientImage = arg.image ?? ''; } catch (_) {}
+    try { patientGender = arg.gender ?? ''; } catch (_) {}
+    try {
+      final age = arg.age?.toString() ?? '';
+      final ageType = arg.ageType?.toString() ?? 'year';
+      patientAge = '$age ${ageType.tr}';
+    } catch (_) {}
+    try {
+      patientFileNumber = arg.fileNumber ?? 'PT-2024-$patientId';
+    } catch (_) {
+      patientFileNumber = 'PT-2024-$patientId';
     }
   }
 
@@ -988,7 +1058,7 @@ class MedicalFileController extends BaseController {
     showLoading();
     try {
       final data = await repo.getFile(patientId);
-      medicalFile.value = data;
+      summary.value = data;
     } catch (e) {
       handleError(e);
     } finally {
@@ -996,9 +1066,29 @@ class MedicalFileController extends BaseController {
     }
   }
 
-  void changeTab(int index) {
-    selectedTab.value = index;
+  // 👈 دالة جلب الوصفة والملاحظات معاً
+  Future<void> fetchVisitDetails(int recordId, int appointmentId) async {
+    // إذا كانت المعرفات وهمية أو جاري التحميل، أوقف التنفيذ
+    if (recordId == 0 || appointmentId == 0) return;
+    if (loadingDetails.contains(recordId) || (prescriptions.containsKey(recordId) && medicalRecords.containsKey(appointmentId))) return;
+
+    loadingDetails.add(recordId);
+    try {
+      final results = await Future.wait([
+        detailsRepo.fetchPrescription(recordId),
+        detailsRepo.fetchMedicalRecord(appointmentId),
+      ]);
+
+      prescriptions[recordId] = results[0] as PrescriptionModel;
+      medicalRecords[appointmentId] = results[1] as MedicalRecordModel;
+    } catch (e) {
+      print('Error fetching visit details: $e');
+    } finally {
+      loadingDetails.remove(recordId);
+    }
   }
+
+  void changeTab(int index) => selectedTab.value = index;
 }
 ```
 
@@ -1951,6 +2041,43 @@ class ExaminationApi {
 
 ```
 
+### File: lib\core\apis\growth\child_growth_api.dart
+```dart
+// File: lib/core/apis/growth/child_growth_api.dart
+import 'package:get/get.dart';
+import 'package:http/http.dart' as http;
+import '../../../core/constants.dart';
+import '../../helper/secure_storage_service.dart';
+
+class ChildGrowthApi {
+  /// 1. show child growth (GET)
+  Future<http.Response> getGrowthData(int childId) async {
+    final token = await SecureStorage.getToken();
+    if (token.isEmpty) {
+      throw Exception('Session expired. Please login again.'.tr);
+    }
+
+    final url = Uri.parse('$baseUrl/api/children/$childId/growth');
+    print('🌐 Requesting Growth URL: $url');
+
+    // استخدام http.get مباشرة مع تحديد وقت أقصى (Timeout) لمنع تعليق التطبيق
+    final response = await http.get(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+        'Accept-Language': Get.locale?.languageCode ?? 'en',
+      },
+    ).timeout(const Duration(seconds: 15));
+
+    print('📥 Growth Status: ${response.statusCode}');
+    print('📥 Growth Body: ${response.body}');
+
+    return response;
+  }
+}
+```
+
 ### File: lib\core\apis\home\home_api.dart
 ```dart
 import 'package:http/http.dart' as http;
@@ -2124,9 +2251,48 @@ class MedicalFileApi {
   }
 
   Future<String> getMedicalFile(int patientId) async {
-    final url = Uri.parse('$baseUrl/api/doctor/patients/$patientId/medical-file');
+    final url = Uri.parse('$baseUrl/api/doctor/$patientId/medicalRecord');
+
+    // طباعة الرابط للتأكد من أن الـ ID يتم تمريره بشكل صحيح
+    print('🌐 Requesting URL: $url');
+
     final response = await http.get(url, headers: await _getHeaders());
+
+    // طباعة حالة الرد وجسم الرد لاكتشاف الخطأ
+    print('📥 Response Status Code: ${response.statusCode}');
+    print('📥 Response Body: ${response.body}');
+
     return response.body;
+  }
+}
+```
+
+### File: lib\core\apis\patients\prescription_record_api.dart
+```dart
+import 'package:http/http.dart' as http;
+import 'package:get/get.dart';
+import '../../../core/constants.dart';
+import '../../helper/secure_storage_service.dart';
+
+class PrescriptionRecordApi {
+  Future<Map<String, String>> _getHeaders() async {
+    final token = await SecureStorage.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Language': Get.locale?.languageCode ?? 'en',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<http.Response> getPrescription(int recordId) async {
+    final url = Uri.parse('$baseUrl/api/prescription/$recordId');
+    return await http.get(url, headers: await _getHeaders()).timeout(const Duration(seconds: 15));
+  }
+
+  Future<http.Response> getMedicalRecord(int appointmentId) async {
+    final url = Uri.parse('$baseUrl/api/medical-record/$appointmentId');
+    return await http.get(url, headers: await _getHeaders()).timeout(const Duration(seconds: 15));
   }
 }
 ```
@@ -2418,6 +2584,47 @@ String token = '';
 
 ```
 
+### File: lib\core\helper\json_utils.dart
+```dart
+/// Defensive JSON value converters.
+///
+/// Laravel can serialize integers and decimals as strings depending on column
+/// type and Resource setup. These helpers tolerate either form so model
+/// parsing never throws a TypeError just because `id` came back as `"17"`
+/// instead of `17`.
+int toIntSafe(dynamic v, [int fallback = 0]) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  if (v is String) return int.tryParse(v) ?? fallback;
+  return fallback;
+}
+
+num toNumSafe(dynamic v, [num fallback = 0]) {
+  if (v is num) return v;
+  if (v is String) return num.tryParse(v) ?? fallback;
+  return fallback;
+}
+
+double? toDoubleOrNull(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toDouble();
+  if (v is String) return double.tryParse(v);
+  return null;
+}
+
+bool toBoolSafe(dynamic v, [bool fallback = false]) {
+  if (v is bool) return v;
+  if (v is num) return v != 0;
+  if (v is String) {
+    final lower = v.toLowerCase();
+    if (lower == 'true' || lower == '1') return true;
+    if (lower == 'false' || lower == '0') return false;
+  }
+  return fallback;
+}
+
+```
+
 ### File: lib\core\helper\secure_storage_service.dart
 ```dart
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -2499,6 +2706,26 @@ class AppTranslations extends Translations {
       'Login': 'Login',
       'Success': 'Success',
       'Error': 'Error',
+
+      // --- Growth Chart Section ---
+      'Failed to load growth data': 'Failed to load growth data',
+      'No measurements found': 'No measurements found',
+      'Current Weight': 'Current Weight',
+      'Current Height': 'Current Height',
+      'Months': 'Months',
+      'months_old': 'months',
+      'Growth History': 'Growth History',
+      'Needs Review': 'Needs Review',
+      'Medical Assessment': 'Medical Assessment',
+      'Close': 'Close',
+      'Session expired. Please login again.': 'Session expired. Please login again.',
+      'Ideal Weight (WHO)': 'Ideal Weight (WHO)',
+      'Max Limit (WHO)': 'Max Limit (WHO)',
+      'weight': 'Weight',
+      'Age (Months)': 'Age (Months)',
+      'Weight (kg)': 'Weight (kg)',
+      'Status: ': 'Status: ',
+
 
       //patients
       'Medical File': 'Medical File',
@@ -2809,6 +3036,25 @@ class AppTranslations extends Translations {
       'High Fever': 'ارتفاع في الحرارة',
       'Chest Allergy': 'حساسية صدرية',
 
+      // --- Growth Chart Section ---
+      'Failed to load growth data': 'فشل في تحميل بيانات النمو',
+      'No measurements found': 'لا توجد قياسات مسجلة',
+      'Current Weight': 'الوزن الحالي',
+      'Current Height': 'الطول الحالي',
+      'Months': 'أشهر',
+      'months_old': 'أشهر',
+      'Growth History': 'سجل النمو',
+      'Needs Review': 'يحتاج مراجعة',
+      'Medical Assessment': 'التقييم الطبي',
+      'Close': 'إغلاق',
+      'Session expired. Please login again.': 'انتهت الجلسة. الرجاء تسجيل الدخول مجدداً.',
+      'Ideal Weight (WHO)': 'الوزن المثالي (WHO)',
+      'Max Limit (WHO)': 'الحد الأقصى (WHO)',
+      'weight': 'وزن',
+      'Age (Months)': 'العمر (بالأشهر)',
+      'Weight (kg)': 'الوزن (كجم)',
+      'Status: ': 'الحالة: ',
+
       //schedule
       'Appointments Schedule': 'جدول المواعيد',
       'All': 'الكل',
@@ -2962,6 +3208,8 @@ class AppTranslations extends Translations {
       'Delete Account': 'حذف الحساب',
       'Permanently delete your account from the app':
           'حذف حسابك بشكل دائم من التطبيق',
+
+
 
       // --- Availability View ---
       'Clinic Settings': 'إعدادات العيادة',
@@ -3216,6 +3464,64 @@ class ExaminationRepo {
 
 ```
 
+### File: lib\core\repos\growth\child_growth_repo.dart
+```dart
+// File: lib/core/repos/growth/child_growth_repo.dart
+import 'dart:convert';
+import '../../../models/growth/child_growth_response_model.dart';
+import '../../apis/growth/child_growth_api.dart';
+
+class ChildGrowthRepo {
+  final ChildGrowthApi api;
+
+  ChildGrowthRepo({ChildGrowthApi? api}) : api = api ?? ChildGrowthApi();
+
+  /// 1. معالجة بيانات مخطط النمو (GET)
+  Future<ChildGrowthResponseModel> fetchChildGrowthData(int childId) async {
+    final response = await api.getGrowthData(childId);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      try {
+        String cleanRes = response.body;
+        if (cleanRes.contains('{')) {
+          cleanRes = cleanRes.substring(cleanRes.indexOf('{'));
+        }
+        final Map<String, dynamic> decodedData = json.decode(cleanRes);
+
+        // التحقق مما إذا كانت البيانات داخل 'data' أم مباشرة في الجذر
+        final targetData = decodedData.containsKey('who_standards')
+            ? decodedData
+            : (decodedData['data'] ?? decodedData);
+
+        return ChildGrowthResponseModel.fromJson(targetData);
+      } catch (e, stacktrace) {
+        print('❌ Parsing Error: $e');
+        print(stacktrace);
+        throw Exception('Data Parsing Error: $e');
+      }
+    } else {
+      // إجبار التطبيق على عرض رسالة السيرفر إذا كان هناك خطأ
+      throw Exception(_parseError(response.body, response.statusCode));
+    }
+  }
+
+  /// مساعدة لقراءة تفاصيل الخطأ بدقة
+  String _parseError(String responseBody, int statusCode) {
+    try {
+      String cleanRes = responseBody;
+      if (cleanRes.contains('{')) {
+        cleanRes = cleanRes.substring(cleanRes.indexOf('{'));
+      }
+      final decoded = json.decode(cleanRes);
+      if (decoded is Map && decoded.containsKey('message')) {
+        return decoded['message'];
+      }
+    } catch (_) {}
+    return 'Server Error $statusCode. Route might require different permissions.';
+  }
+}
+```
+
 ### File: lib\core\repos\home\home_repo.dart
 ```dart
 import 'dart:convert';
@@ -3396,7 +3702,7 @@ class MedicalFileRepo {
   final MedicalFileApi api;
   MedicalFileRepo({required this.api});
 
-  Future<MedicalFileModel> getFile(int id) async {
+  Future<MedicalSummary> getFile(int id) async {
     final res = await api.getMedicalFile(id);
 
     String cleanRes = res;
@@ -3405,10 +3711,49 @@ class MedicalFileRepo {
     }
 
     final decoded = jsonDecode(cleanRes);
-    if (decoded['status'] == true && decoded['data'] != null) {
-      return MedicalFileModel.fromJson(decoded['data']);
+
+    if (decoded['status'] == 'success' && decoded['summary'] != null) {
+      return MedicalSummary.fromJson(decoded['summary']);
     } else {
-      throw Exception(decoded['message'] ?? 'Failed to fetch medical file');
+      // إرجاع رسالة الخطأ القادمة من السيرفر إن وجدت
+      throw Exception(decoded['message'] ?? 'Server error occurred');
+    }
+  }
+}
+```
+
+### File: lib\core\repos\patients\prescription_record_repo.dart
+```dart
+import 'dart:convert';
+import '../../../models/patients/prescription_record_model.dart';
+import '../../apis/patients/prescription_record_api.dart';
+
+class PrescriptionRecordRepo {
+  final PrescriptionRecordApi api;
+  PrescriptionRecordRepo({PrescriptionRecordApi? api}) : api = api ?? PrescriptionRecordApi();
+
+  String _cleanJson(String response) {
+    if (response.contains('{')) return response.substring(response.indexOf('{'));
+    return response;
+  }
+
+  Future<PrescriptionModel> fetchPrescription(int recordId) async {
+    final res = await api.getPrescription(recordId);
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final decoded = json.decode(_cleanJson(res.body));
+      return PrescriptionModel.fromJson(decoded['prescription'] ?? {});
+    } else {
+      throw Exception('Failed to fetch prescription');
+    }
+  }
+
+  Future<MedicalRecordModel> fetchMedicalRecord(int appointmentId) async {
+    final res = await api.getMedicalRecord(appointmentId);
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final decoded = json.decode(_cleanJson(res.body));
+      return MedicalRecordModel.fromJson(decoded['medical_record'] ?? {});
+    } else {
+      throw Exception('Failed to fetch medical record');
     }
   }
 }
@@ -4290,6 +4635,121 @@ class MedicationModel {
 
 ```
 
+### File: lib\models\growth\child_growth_response_model.dart
+```dart
+import '../../core/helper/json_utils.dart';
+import 'growth_record_model.dart';
+import 'who_standard_model.dart';
+
+class ChildGrowthResponseModel {
+  final String childName;
+  final String childGender;
+  final double currentAgeMonths;
+  final List<GrowthRecordModel> growthHistory;
+  final List<WhoStandardModel> whoStandards;
+
+  const ChildGrowthResponseModel({
+    required this.childName,
+    required this.childGender,
+    required this.currentAgeMonths,
+    required this.growthHistory,
+    required this.whoStandards,
+  });
+
+  factory ChildGrowthResponseModel.fromJson(Map<String, dynamic> json) {
+    return ChildGrowthResponseModel(
+      childName: json['child_name']?.toString() ?? '',
+      childGender: json['child_gender']?.toString() ?? 'male',
+      currentAgeMonths: toDoubleOrNull(json['current_age_months']) ?? 0.0,
+      growthHistory:
+          (json['growth_history'] as List?)
+              ?.map(
+                (e) => GrowthRecordModel.fromJson(e as Map<String, dynamic>),
+              )
+              .toList() ??
+          [],
+      whoStandards:
+          (json['who_standards'] as List?)
+              ?.map((e) => WhoStandardModel.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+    );
+  }
+}
+
+```
+
+### File: lib\models\growth\growth_record_model.dart
+```dart
+import '../../core/helper/json_utils.dart';
+
+class GrowthRecordModel {
+  final int id;
+  final double height;
+  final double weight;
+  final String date;
+  final int ageInMonths; // الباك إند يعيدها كـ double في حقل القياس
+  final double bmi;
+  final String statusText;
+  final String statusColor;
+
+  const GrowthRecordModel({
+    required this.id,
+    required this.height,
+    required this.weight,
+    required this.date,
+    required this.ageInMonths,
+    required this.bmi,
+    required this.statusText,
+    required this.statusColor,
+  });
+
+  factory GrowthRecordModel.fromJson(Map<String, dynamic> json) {
+    return GrowthRecordModel(
+      id: toIntSafe(json['id']),
+      height: toDoubleOrNull(json['height']) ?? 0.0,
+      weight: toDoubleOrNull(json['weight']) ?? 0.0,
+      date: json['date']?.toString() ?? json['record_date']?.toString() ?? '',
+
+      ageInMonths: toIntSafe(json['age_in_months'] ?? json['age']),
+      bmi: toDoubleOrNull(json['bmi']) ?? 0.0,
+      statusText: json['status_text']?.toString() ?? 'Normal',
+      statusColor: json['status_color']?.toString() ?? '#4CAF50',
+    );
+  }
+}
+
+```
+
+### File: lib\models\growth\who_standard_model.dart
+```dart
+import '../../core/helper/json_utils.dart';
+
+class WhoStandardModel {
+  final int ageInMonths;
+  final double whoMinWeight;
+  final double whoIdeal;
+  final double whoMaxWeight;
+
+  const WhoStandardModel({
+    required this.ageInMonths,
+    required this.whoMinWeight,
+    required this.whoIdeal,
+    required this.whoMaxWeight,
+  });
+
+  factory WhoStandardModel.fromJson(Map<String, dynamic> json) {
+    return WhoStandardModel(
+      ageInMonths: toIntSafe(json['age_in_months']),
+      whoMinWeight: toDoubleOrNull(json['who_min_weight']) ?? 0.0,
+      whoIdeal: toDoubleOrNull(json['who_ideal']) ?? 0.0,
+      whoMaxWeight: toDoubleOrNull(json['who_max_weight']) ?? 0.0,
+    );
+  }
+}
+
+```
+
 ### File: lib\models\home\doctor_dashboard_model.dart
 ```dart
 class DoctorHomeModel {
@@ -4579,54 +5039,8 @@ class DoctorNotificationModel {
 
 ### File: lib\models\patients\medical_file_model.dart
 ```dart
-class MedicalFileModel {
-  final PatientInfo patientInfo;
-  final MedicalSummary summary;
-
-  MedicalFileModel({required this.patientInfo, required this.summary});
-
-  factory MedicalFileModel.fromJson(Map<String, dynamic> json) {
-    return MedicalFileModel(
-      patientInfo: PatientInfo.fromJson(json['patient_info'] ?? {}),
-      summary: MedicalSummary.fromJson(json['summary'] ?? {}),
-    );
-  }
-}
-
-class PatientInfo {
-  final int id;
-  final String name;
-  final int age;
-  final String gender;
-  final String fileNumber;
-  final String image;
-
-  PatientInfo({
-    required this.id,
-    required this.name,
-    required this.age,
-    required this.gender,
-    required this.fileNumber,
-    required this.image,
-  });
-
-  factory PatientInfo.fromJson(Map<String, dynamic> json) {
-    String rawImage = json['image']?.toString() ?? '';
-    if (rawImage.contains('http')) {
-      final parts = rawImage.split('8000/');
-      rawImage = parts.length > 1 ? parts.last : rawImage;
-    }
-
-    return PatientInfo(
-      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
-      name: json['name']?.toString() ?? '',
-      age: int.tryParse(json['age']?.toString() ?? '0') ?? 0,
-      gender: json['gender']?.toString() ?? 'male',
-      fileNumber: json['file_number']?.toString() ?? '',
-      image: rawImage,
-    );
-  }
-}
+// File: lib/models/patients/medical_file_model.dart
+// 👈 تم إزالة MedicalFileModel و PatientInfo لأنها لم تعد تأتي من الخادم
 
 class MedicalSummary {
   final String weight;
@@ -4652,13 +5066,17 @@ class MedicalSummary {
   factory MedicalSummary.fromJson(Map<String, dynamic> json) {
     var previousList = json['previous_visits'] as List? ?? [];
     return MedicalSummary(
-      weight: json['weight']?.toString() ?? '',
+      // 👈 تحويل الأرقام إلى نصوص ومعالجة الـ null
+      weight: json['weight']?.toString() ?? '0',
       weightStatus: json['weight_status']?.toString() ?? '',
-      height: json['height']?.toString() ?? '',
+      height: json['height']?.toString() ?? '0',
       heightStatus: json['height_status']?.toString() ?? '',
       bloodType: json['blood_type']?.toString() ?? '',
-      allergies: json['allergies']?.toString() ?? '',
-      lastVisit: json['last_visit'] != null ? VisitModel.fromJson(json['last_visit']) : null,
+      allergies: json['allergies']?.toString() ?? 'None',
+      // 👈 التحقق من وجود بيانات داخل last_visit قبل تحويلها
+      lastVisit: (json['last_visit'] != null && json['last_visit']['date'] != null)
+          ? VisitModel.fromJson(json['last_visit'])
+          : null,
       previousVisits: previousList.map((e) => VisitModel.fromJson(e)).toList(),
     );
   }
@@ -4668,14 +5086,105 @@ class VisitModel {
   final String date;
   final String doctorName;
   final String diagnosis;
+  final int recordId;      // 👈 تمت الإضافة
+  final int appointmentId; // 👈 تمت الإضافة
 
-  VisitModel({required this.date, required this.doctorName, required this.diagnosis});
+  VisitModel({
+    required this.date,
+    required this.doctorName,
+    required this.diagnosis,
+    required this.recordId,
+    required this.appointmentId,
+  });
 
   factory VisitModel.fromJson(Map<String, dynamic> json) {
     return VisitModel(
       date: json['date']?.toString() ?? '',
       doctorName: json['doctor_name']?.toString() ?? '',
-      diagnosis: json['diagnosis']?.toString() ?? '',
+      diagnosis: json['diagnosis']?.toString() ?? 'None',
+      recordId: int.tryParse(json['record_id']?.toString() ?? '0') ?? 0,
+      appointmentId: int.tryParse(json['appointment_id']?.toString() ?? '0') ?? 0,
+    );
+  }
+}
+```
+
+### File: lib\models\patients\prescription_record_model.dart
+```dart
+class MedicalRecordModel {
+  final int id;
+  final int appointmentId;
+  final String diagnosis;
+  final String doctorNotes;
+
+  MedicalRecordModel({
+    required this.id,
+    required this.appointmentId,
+    required this.diagnosis,
+    required this.doctorNotes,
+  });
+
+  factory MedicalRecordModel.fromJson(Map<String, dynamic> json) {
+    return MedicalRecordModel(
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      appointmentId: int.tryParse(json['appointment_id']?.toString() ?? '0') ?? 0,
+      diagnosis: json['diagnosis']?.toString() ?? 'None',
+      doctorNotes: json['doctor_notes']?.toString() ?? '',
+    );
+  }
+}
+
+class PrescriptionModel {
+  final int recordId;
+  final int appointmentId;
+  final String doctorName;
+  final List<MedicationItemModel> medications;
+
+  PrescriptionModel({
+    required this.recordId,
+    required this.appointmentId,
+    required this.doctorName,
+    required this.medications,
+  });
+
+  factory PrescriptionModel.fromJson(Map<String, dynamic> json) {
+    final doc = json['doctor'] ?? {};
+    final medsList = json['medications'] as List? ?? [];
+
+    return PrescriptionModel(
+      recordId: int.tryParse(json['record_id']?.toString() ?? '0') ?? 0,
+      appointmentId: int.tryParse(json['appointment_id']?.toString() ?? '0') ?? 0,
+      doctorName: doc['name']?.toString() ?? '',
+      medications: medsList.map((e) => MedicationItemModel.fromJson(e)).toList(),
+    );
+  }
+}
+
+class MedicationItemModel {
+  final int id;
+  final String name;
+  final String dosage;
+  final String frequency;
+  final String timing;
+  final String duration;
+
+  MedicationItemModel({
+    required this.id,
+    required this.name,
+    required this.dosage,
+    required this.frequency,
+    required this.timing,
+    required this.duration,
+  });
+
+  factory MedicationItemModel.fromJson(Map<String, dynamic> json) {
+    return MedicationItemModel(
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      name: json['name']?.toString() ?? '',
+      dosage: json['dosage']?.toString() ?? '',
+      frequency: json['frequency']?.toString() ?? '',
+      timing: json['timing']?.toString() ?? '',
+      duration: json['duration']?.toString() ?? '',
     );
   }
 }
@@ -5547,6 +6056,139 @@ class ExaminationView extends GetView<ExaminationController> {
 
 ```
 
+### File: lib\views\growth\child_growth_tab_view.dart
+```dart
+// File: lib/views/growth/child_growth_tab_view.dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../../controllers/growth/child_growth_controller.dart';
+import '../../../core/repos/growth/child_growth_repo.dart';
+import '../../widgets/growth/growth_chart_widget.dart';
+import '../../widgets/growth/growth_history_list.dart';
+
+class ChildGrowthTabView extends StatelessWidget {
+  final int childId;
+
+  const ChildGrowthTabView({super.key, required this.childId});
+
+  @override
+  Widget build(BuildContext context) {
+    // حقن الـ Controller الخاص بالنمو
+    final controller = Get.put(ChildGrowthController(repo: ChildGrowthRepo()));
+    controller.childId = childId;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.getGrowthDashboard();
+    });
+
+    return Obx(() {
+      if (controller.isLoading && controller.growthData.value == null) {
+        return Center(
+          child: CircularProgressIndicator(color: context.theme.primaryColor),
+        );
+      }
+
+      final data = controller.growthData.value;
+      if (data == null) {
+        return Center(
+          child: Text(
+            'Failed to load growth data'.tr,
+            style: TextStyle(color: context.textTheme.bodyMedium?.color),
+          ),
+        );
+      }
+
+      return RefreshIndicator(
+        onRefresh: () => controller.getGrowthDashboard(),
+        color: context.theme.primaryColor,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildQuickStatsSection(context, data.growthHistory, data.currentAgeMonths),
+              const SizedBox(height: 16),
+              GrowthChartWidget(data: data),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Growth History'.tr,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: context.textTheme.bodyLarge?.color,
+                    ),
+                  ),
+                  Icon(Icons.sort_rounded, color: context.textTheme.bodyMedium?.color, size: 20),
+                ],
+              ),
+              const SizedBox(height: 12),
+              GrowthHistoryList(data: data),
+              const SizedBox(height: 60),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  Widget _buildQuickStatsSection(BuildContext context, List<dynamic> history, double rawAge) {
+    final latestRecord = history.isNotEmpty ? history.first : null;
+    final displayWeight = latestRecord != null ? '${latestRecord.weight} ${'kg'.tr}' : '--';
+    final displayHeight = latestRecord != null ? '${latestRecord.height} ${'cm'.tr}' : '--';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _QuickStatCard(icon: Icons.scale_outlined, label: 'Current Weight'.tr, value: displayWeight)),
+          Container(width: 1, height: 40, color: context.theme.dividerColor),
+          Expanded(child: _QuickStatCard(icon: Icons.straighten_outlined, label: 'Current Height'.tr, value: displayHeight)),
+          Container(width: 1, height: 40, color: context.theme.dividerColor),
+          Expanded(child: _QuickStatCard(icon: Icons.calendar_month_outlined, label: 'Age'.tr, value: '${rawAge.toInt()} ${'Months'.tr}')),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickStatCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _QuickStatCard({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(icon, color: context.theme.primaryColor, size: 22),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: context.textTheme.bodyMedium?.color, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textTheme.bodyLarge?.color),
+        ),
+      ],
+    );
+  }
+}
+```
+
 ### File: lib\views\home\home_view.dart
 ```dart
 import 'package:flutter/material.dart';
@@ -5939,11 +6581,13 @@ class DoctorNotificationView extends GetView<DoctorNotificationController> {
 
 ### File: lib\views\patients\medical_file_view.dart
 ```dart
+// File: lib/views/patients/medical_file_view.dart
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/patients/medical_file_controller.dart';
 import '../../core/constants.dart';
 import '../../models/patients/medical_file_model.dart';
+import '../growth/child_growth_tab_view.dart'; // 👈 استدعاء واجهة النمو
 
 class MedicalFileView extends GetView<MedicalFileController> {
   const MedicalFileView({super.key});
@@ -5961,15 +6605,14 @@ class MedicalFileView extends GetView<MedicalFileController> {
           'Medical File'.tr,
           style: context.theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
-        // تم إلغاء زر الثلاث نقاط من هنا
       ),
       body: Obx(() {
-        if (controller.isLoading) {
+        if (controller.isLoading && controller.summary.value == null) {
           return Center(child: CircularProgressIndicator(color: context.theme.primaryColor));
         }
 
-        final data = controller.medicalFile.value;
-        if (data == null) {
+        final summaryData = controller.summary.value;
+        if (summaryData == null) {
           return Center(child: Text('No details found'.tr));
         }
 
@@ -5977,16 +6620,14 @@ class MedicalFileView extends GetView<MedicalFileController> {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0),
-              child: _buildPatientHeader(context, data.patientInfo),
+              child: _buildPatientHeader(context),
             ),
             const SizedBox(height: 16),
             _buildCustomTabBar(context),
             const SizedBox(height: 16),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
-                child: _buildTabContent(context, data.summary),
-              ),
+              // 👈 أزلنا الـ SingleChildScrollView من هنا لتجنب مشاكل التمرير
+              child: _buildTabContent(context, summaryData),
             ),
           ],
         );
@@ -5994,7 +6635,8 @@ class MedicalFileView extends GetView<MedicalFileController> {
     );
   }
 
-  Widget _buildPatientHeader(BuildContext context, PatientInfo info) {
+  Widget _buildPatientHeader(BuildContext context) {
+    // ... (نفس الكود السابق للـ PatientHeader بدون تغيير)
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -6013,8 +6655,22 @@ class MedicalFileView extends GetView<MedicalFileController> {
           CircleAvatar(
             radius: 35,
             backgroundColor: Colors.white.withValues(alpha: 0.2),
-            backgroundImage: info.image.isNotEmpty ? NetworkImage('$baseUrl/${info.image}') : null,
-            child: info.image.isEmpty ? const Icon(Icons.person, size: 35, color: Colors.white) : null,
+            backgroundImage: controller.patientImage.isNotEmpty
+                ? NetworkImage(
+              controller.patientImage.startsWith('http')
+                  ? controller.patientImage
+                  : '$baseUrl/${controller.patientImage}',
+            )
+                : null,
+            onBackgroundImageError: controller.patientImage.isNotEmpty
+                ? (exception, stackTrace) {
+              // 👈 هذا السطر يمنع الانهيار والخطأ الأحمر في الـ Console عند فشل تحميل الصورة
+              debugPrint('⚠️ Failed to load patient image: $exception');
+            }
+                : null,
+            child: controller.patientImage.isEmpty
+                ? const Icon(Icons.person, size: 35, color: Colors.white)
+                : null,
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -6025,7 +6681,7 @@ class MedicalFileView extends GetView<MedicalFileController> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      info.name,
+                      controller.patientName,
                       style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const Icon(Icons.calendar_today_outlined, color: Colors.white, size: 20),
@@ -6033,12 +6689,12 @@ class MedicalFileView extends GetView<MedicalFileController> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${info.age} ${'Yrs'.tr} - ${info.gender.tr}',
+                  '${controller.patientAge} - ${controller.patientGender.tr}',
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'ID: ${info.fileNumber}',
+                  'ID: ${controller.patientFileNumber}',
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
                 ),
               ],
@@ -6050,6 +6706,7 @@ class MedicalFileView extends GetView<MedicalFileController> {
   }
 
   Widget _buildCustomTabBar(BuildContext context) {
+    // ... (نفس الكود السابق للـ TabBar بدون تغيير)
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -6085,38 +6742,253 @@ class MedicalFileView extends GetView<MedicalFileController> {
   Widget _buildTabContent(BuildContext context, MedicalSummary summary) {
     return Obx(() {
       switch (controller.selectedTab.value) {
-        case 0: // Summary
+        case 0:
           return _buildSummaryTab(context, summary);
+        case 1:
+        // 👈 ربط واجهة مخطط النمو وتمرير المعرف
+          return ChildGrowthTabView(childId: controller.patientId);
+        case 2:
+          return _buildVisitsTab(context, summary);
         default:
-          return Center(child: Text('Under Construction'.tr, style: TextStyle(color: context.theme.hintColor)));
+          return const SizedBox.shrink();
       }
     });
   }
+  Widget _buildVisitsTab(BuildContext context, MedicalSummary summary) {
+    final allVisits = <VisitModel>[];
+    if (summary.lastVisit != null) allVisits.add(summary.lastVisit!);
+    allVisits.addAll(summary.previousVisits);
+
+    if (allVisits.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 40),
+          child: Text('No visits found'.tr, style: TextStyle(color: context.theme.hintColor)),
+        ),
+      );
+    }
+
+    return ListView.separated(
+
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
+      itemCount: allVisits.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        return _buildExpandableVisitCard(context, allVisits[index]);
+      },
+    );
+  }
+
+  Widget _buildExpandableVisitCard(BuildContext context, VisitModel visit) {
+    return Container(
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: context.theme.shadowColor.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          onExpansionChanged: (expanded) {
+
+            if (expanded) controller.fetchVisitDetails(visit.recordId, visit.appointmentId);
+          },
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: context.theme.primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.medical_information_outlined, color: context.theme.primaryColor),
+          ),
+          title: Text(
+            visit.date,
+            style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+          subtitle: Text(
+            '${'Diagnosis'.tr}: ${visit.diagnosis.tr}',
+            style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor),
+          ),
+          children: [
+            Obx(() {
+              if (controller.loadingDetails.contains(visit.recordId)) {
+                return Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: CircularProgressIndicator(color: context.theme.primaryColor),
+                );
+              }
+
+              final record = controller.medicalRecords[visit.appointmentId];
+              final prescription = controller.prescriptions[visit.recordId];
+
+              if (record == null && prescription == null) {
+
+                return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text('No details found'.tr, style: TextStyle(color: context.theme.hintColor)),
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Divider(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+                    const SizedBox(height: 8),
+
+                    if (record != null && record.doctorNotes.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.notes, size: 18, color: context.theme.primaryColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Doctor Notes'.tr,
+                            style: TextStyle(fontWeight: FontWeight.bold, color: context.theme.primaryColor),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: context.theme.scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          record.doctorNotes,
+                          style: context.theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+
+                    if (prescription != null && prescription.medications.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.medication_outlined, size: 18, color: context.theme.primaryColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Medications Prescription'.tr,
+                            style: TextStyle(fontWeight: FontWeight.bold, color: context.theme.primaryColor),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ...prescription.medications.map((med) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: context.theme.scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.vaccines_outlined, color: context.theme.hintColor, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    med.name,
+                                    style: context.theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${med.dosage} • ${med.frequency} • ${med.timing.tr}',
+                                    style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${'Duration'.tr}: ${med.duration}',
+                                    style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.primaryColor),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )),
+                    ],
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildSummaryTab(BuildContext context, MedicalSummary summary) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(child: _buildVitalCard(context, 'Weight'.tr, '${summary.weight} ${'kg'.tr}', summary.weightStatus)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildVitalCard(context, 'Height'.tr, '${summary.height} ${'cm'.tr}', summary.heightStatus)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _buildVitalCard(context, 'Blood Type'.tr, summary.bloodType, null)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildVitalCard(context, 'Allergies'.tr, summary.allergies.tr, null)),
-          ],
-        ),
-        const SizedBox(height: 24),
 
-        // Last Visit
-        if (summary.lastVisit != null) ...[
-          Text('Last Visit'.tr, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _buildVitalCard(context, 'Weight'.tr, '${summary.weight} ${'kg'.tr}', summary.weightStatus)),
+              const SizedBox(width: 12),
+              Expanded(child: _buildVitalCard(context, 'Height'.tr, '${summary.height} ${'cm'.tr}', summary.heightStatus)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: _buildVitalCard(context, 'Blood Type'.tr, summary.bloodType, null)),
+              const SizedBox(width: 12),
+              Expanded(child: _buildVitalCard(context, 'Allergies'.tr, summary.allergies.tr, null)),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          if (summary.lastVisit != null) ...[
+            Text('Last Visit'.tr, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: context.theme.cardColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.monitor_heart_outlined, color: context.theme.primaryColor, size: 28),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(summary.lastVisit!.date, style: context.theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text('${'Diagnosis'.tr}: ${summary.lastVisit!.diagnosis.tr}', style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+                      ],
+                    ),
+                  ),
+                  Text(summary.lastVisit!.doctorName, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          Text('Previous Visits'.tr, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(16),
@@ -6125,66 +6997,31 @@ class MedicalFileView extends GetView<MedicalFileController> {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
             ),
-            child: Row(
+            child: Column(
               children: [
-                Icon(Icons.monitor_heart_outlined, color: context.theme.primaryColor, size: 28),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ...summary.previousVisits.map((visit) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(summary.lastVisit!.date, style: context.theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text('${'Diagnosis'.tr}: ${summary.lastVisit!.diagnosis.tr}', style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(visit.date, style: context.theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Text(visit.diagnosis.tr, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+                        ],
+                      ),
+                      Text(visit.doctorName, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
                     ],
                   ),
-                ),
-                Text(summary.lastVisit!.doctorName, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
+                )),
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 40),
         ],
-
-        // Previous Visits
-        Text('Previous Visits'.tr, style: context.theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: context.theme.cardColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.1)),
-          ),
-          child: Column(
-            children: [
-              ...summary.previousVisits.map((visit) => Padding(
-                padding: const EdgeInsets.only(bottom: 12.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(visit.date, style: context.theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        Text(visit.diagnosis.tr, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
-                      ],
-                    ),
-                    Text(visit.doctorName, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.hintColor)),
-                  ],
-                ),
-              )),
-              const Divider(),
-              TextButton(
-                onPressed: () {},
-                child: Text('View All Visits'.tr, style: TextStyle(color: context.theme.primaryColor, fontWeight: FontWeight.bold)),
-              )
-            ],
-          ),
-        ),
-        const SizedBox(height: 40),
-      ],
+      ),
     );
   }
 
@@ -7105,9 +7942,7 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
-        ],
+        // تم إزالة الخاصية actions التي كانت تحتوي على زر الثلاث نقاط من هنا
       ),
       body: Obx(() {
         if (controller.isLoading) {
@@ -7159,9 +7994,9 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
 
   // تم تغيير dynamic إلى AppointmentDetailsModel هنا
   Widget _buildPatientHeader(
-    BuildContext context,
-    AppointmentDetailsModel data,
-  ) {
+      BuildContext context,
+      AppointmentDetailsModel data,
+      ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -7228,9 +8063,9 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
 
   // تم تغيير dynamic إلى AppointmentDetailsModel هنا
   Widget _buildAppointmentInfoCard(
-    BuildContext context,
-    AppointmentDetailsModel data,
-  ) {
+      BuildContext context,
+      AppointmentDetailsModel data,
+      ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -7277,11 +8112,11 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
   }
 
   Widget _buildInfoRow(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String value,
-  ) {
+      BuildContext context,
+      IconData icon,
+      String label,
+      String value,
+      ) {
     return Row(
       children: [
         Icon(icon, color: context.theme.hintColor, size: 20),
@@ -7304,11 +8139,11 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
   }
 
   Widget _buildPaymentRow(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String status,
-  ) {
+      BuildContext context,
+      IconData icon,
+      String label,
+      String status,
+      ) {
     Color badgeColor = status == 'partially_paid' || status == 'paid'
         ? Colors.green
         : Colors.orange;
@@ -7364,9 +8199,9 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
 
   // 👈 تم إضافة استقبال متغير data
   Widget _buildActionButtons(
-    BuildContext context,
-    AppointmentDetailsModel data,
-  ) {
+      BuildContext context,
+      AppointmentDetailsModel data,
+      ) {
     return Row(
       children: [
         // زر الإلغاء (فارغ حالياً ريثما نربطه لاحقاً بـ API الإلغاء)
@@ -7427,7 +8262,6 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
     );
   }
 }
-
 ```
 
 ### File: lib\views\schedule\patients_view.dart
@@ -7454,26 +8288,7 @@ class PatientsView extends GetView<PatientsController> {
           'Patients'.tr,
           style: context.theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
-        actions: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: Icon(Icons.notifications_outlined, color: context.theme.primaryColor, size: 28),
-                onPressed: () {},
-              ),
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                ),
-              ),
-            ],
-          ),
-        ],
+        // تم إزالة زر الإشعارات من هنا
       ),
       body: Column(
         children: [
@@ -7487,10 +8302,7 @@ class PatientsView extends GetView<PatientsController> {
                 hintText: 'Search for patient name or file number'.tr,
                 hintStyle: TextStyle(color: context.theme.hintColor, fontSize: 14),
                 prefixIcon: Icon(Icons.search, color: context.theme.hintColor),
-                suffixIcon: IconButton(
-                  icon: Icon(Icons.filter_list, color: context.theme.hintColor),
-                  onPressed: () {},
-                ),
+                // تم إزالة suffixIcon (زر الفلتر) من هنا
                 filled: true,
                 fillColor: context.theme.cardColor,
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -7599,7 +8411,7 @@ class PatientsView extends GetView<PatientsController> {
           ),
           InkWell(
             onTap: () {
-              Get.toNamed('/medical_file', arguments: patient.id);
+              Get.toNamed('/medical_file', arguments: patient);
             },
             borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
             child: Container(
@@ -7649,41 +8461,11 @@ class ScheduleView extends GetView<ScheduleController> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.filter_list, color: context.theme.primaryColor),
-            onPressed: () {},
-          ),
-        ],
+
       ),
       body: Column(
         children: [
-          // شريط "الكل" والعدد
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-            child: Row(
-              children: [
-                Text(
-                  'All'.tr,
-                  style: context.theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Obx(() => CircleAvatar(
-                  radius: 12,
-                  backgroundColor: context.theme.primaryColor,
-                  child: Text(
-                    controller.scheduleData.value?.totalAppointments.toString() ?? '0',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                )),
-                const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
-              ],
-            ),
-          ),
-
-          // الشريط الأفقي للتواريخ (تم دمج التحقق من الأيام هنا)
+          const SizedBox(height: 10),
           SizedBox(
             height: 90,
             child: Obx(() {
@@ -7766,147 +8548,156 @@ class ScheduleView extends GetView<ScheduleController> {
           // قائمة المواعيد
           Expanded(
             child: Obx(() {
-              if (controller.isLoading && controller.weekDates.isNotEmpty) {
+              // إخفاء الـ Loader الخاص بالـ Obx لتجنب التضارب مع الـ RefreshIndicator أثناء التحديث
+              if (controller.isLoading && controller.scheduleData.value == null) {
                 return Center(child: CircularProgressIndicator(color: context.theme.primaryColor));
               }
 
               final appointments = controller.scheduleData.value?.appointments ?? [];
 
-              if (appointments.isEmpty) {
-                return Center(child: Text('No appointments for this date'.tr));
-              }
+              // 👈 إضافة RefreshIndicator يغلف قائمة المواعيد
+              return RefreshIndicator(
+                color: context.theme.primaryColor,
+                onRefresh: () async {
+                  await controller.fetchScheduleForDate(controller.selectedDate.value);
+                },
+                child: appointments.isEmpty
 
-              return ListView.builder(
-                padding: const EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 100),
-                itemCount: appointments.length,
-                itemBuilder: (context, index) {
-                  final appointment = appointments[index];
-                  // تحديد البطاقة الأولى للتمييز بناءً على التصميم
-                  final isFirst = index == 0;
+                    ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+                    Center(child: Text('No appointments for this date'.tr)),
+                  ],
+                )
+                    : ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 100),
+                  itemCount: appointments.length,
+                  itemBuilder: (context, index) {
+                    final appointment = appointments[index];
+                    final isFirst = index == 0;
 
-                  // ─── تم التعديل هنا: إضافة Padding و InkWell للانتقال ───
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: InkWell(
-                      onTap: () {
-                        // الانتقال لشاشة التفاصيل وتمرير معرّف الموعد
-                        Get.toNamed('/appointment_details', arguments: appointment.id);
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: isFirst ? context.theme.primaryColor.withValues(alpha: 0.08) : context.theme.cardColor,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isFirst ? context.theme.primaryColor.withValues(alpha: 0.3) : context.theme.dividerColor.withValues(alpha: 0.1),
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: InkWell(
+                        onTap: () {
+
+                          Get.toNamed('/appointment_details', arguments: appointment.id);
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isFirst ? context.theme.primaryColor.withValues(alpha: 0.08) : context.theme.cardColor,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isFirst ? context.theme.primaryColor.withValues(alpha: 0.3) : context.theme.dividerColor.withValues(alpha: 0.1),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: context.theme.shadowColor.withValues(alpha: 0.02),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: context.theme.shadowColor.withValues(alpha: 0.02),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // بيانات الوقت في اليسار
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Text(
-                                  '${appointment.time} ${appointment.timePeriod.tr}',
-                                  style: context.theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: context.theme.textTheme.bodyLarge?.color,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${appointment.duration} ${'minutes'.tr}',
-                                  style: context.theme.textTheme.bodySmall?.copyWith(
-                                    color: context.theme.hintColor,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
 
-                            const SizedBox(width: 16),
-
-                            // بيانات المريض في المنتصف
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   Text(
-                                    appointment.patientName,
+                                    '${appointment.time} ${appointment.timePeriod.tr}',
                                     style: context.theme.textTheme.titleMedium?.copyWith(
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 16,
+                                      color: context.theme.textTheme.bodyLarge?.color,
                                     ),
-                                    textAlign: TextAlign.right,
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${appointment.age} ${appointment.ageType.tr} - ${appointment.gender.tr}',
+                                    '${appointment.duration} ${'minutes'.tr}',
                                     style: context.theme.textTheme.bodySmall?.copyWith(
                                       color: context.theme.hintColor,
                                     ),
-                                    textAlign: TextAlign.right,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    appointment.note,
-                                    style: context.theme.textTheme.bodySmall?.copyWith(
-                                      color: context.theme.textTheme.bodyLarge?.color?.withValues(alpha: 0.8),
-                                    ),
-                                    textAlign: TextAlign.right,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
-                            ),
 
-                            const SizedBox(width: 16),
+                              const SizedBox(width: 16),
 
-                            // الصورة والنقطة في اليمين
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                CircleAvatar(
-                                  radius: 24,
-                                  backgroundColor: context.theme.dividerColor.withValues(alpha: 0.1),
-                                  backgroundImage: appointment.image.isNotEmpty
-                                      ? NetworkImage('$baseUrl/${appointment.image}')
-                                      : null,
-                                  child: appointment.image.isEmpty
-                                      ? Icon(Icons.person, color: context.theme.hintColor)
-                                      : null,
+
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      appointment.patientName,
+                                      style: context.theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                      textAlign: TextAlign.right,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${appointment.age} ${appointment.ageType.tr} - ${appointment.gender.tr}',
+                                      style: context.theme.textTheme.bodySmall?.copyWith(
+                                        color: context.theme.hintColor,
+                                      ),
+                                      textAlign: TextAlign.right,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      appointment.note,
+                                      style: context.theme.textTheme.bodySmall?.copyWith(
+                                        color: context.theme.textTheme.bodyLarge?.color?.withValues(alpha: 0.8),
+                                      ),
+                                      textAlign: TextAlign.right,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ),
-                                Positioned(
-                                  right: -4,
-                                  top: 15,
-                                  child: Container(
-                                    width: 12,
-                                    height: 12,
-                                    decoration: BoxDecoration(
-                                      color: context.theme.primaryColor,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(color: context.theme.cardColor, width: 2),
+                              ),
+                              const SizedBox(width: 16),
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 24,
+                                    backgroundColor: context.theme.dividerColor.withValues(alpha: 0.1),
+                                    backgroundImage: appointment.image.isNotEmpty
+                                        ? NetworkImage('$baseUrl/${appointment.image}')
+                                        : null,
+                                    child: appointment.image.isEmpty
+                                        ? Icon(Icons.person, color: context.theme.hintColor)
+                                        : null,
+                                  ),
+                                  Positioned(
+                                    right: -4,
+                                    top: 15,
+                                    child: Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: context.theme.primaryColor,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: context.theme.cardColor, width: 2),
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               );
             }),
           ),
@@ -9742,6 +10533,582 @@ class PrescriptionTab extends StatelessWidget {
   }
 }
 
+```
+
+### File: lib\widgets\growth\growth_chart_widget.dart
+```dart
+import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:get/get.dart';
+import '../../../models/growth/child_growth_response_model.dart';
+import '../../../models/growth/growth_record_model.dart';
+import 'dart:math' as math;
+
+class GrowthChartWidget extends StatelessWidget {
+  final ChildGrowthResponseModel data;
+
+  const GrowthChartWidget({super.key, required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final isRtl = Get.locale?.languageCode == 'ar';
+
+    return Container(
+      height: 320,
+      padding: const EdgeInsets.fromLTRB(12, 20, 20, 12),
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLegend(context),
+          const SizedBox(height: 16),
+          Expanded(child: LineChart(_buildChartData(context, isRtl))),
+        ],
+      ),
+    );
+  }
+
+  /// الألوان والخطوط أعلى المخطط (Legend)
+  Widget _buildLegend(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          _LegendItem(
+            color: Colors.blue,
+            label: '${'weight'.tr} ${data.childName}',
+            isDot: false,
+          ),
+          const SizedBox(width: 12),
+          _LegendItem(
+            color: Colors.green,
+            label: 'Ideal Weight (WHO)'.tr,
+            isDot: true,
+          ),
+          const SizedBox(width: 12),
+          _LegendItem(
+            color: Colors.redAccent,
+            label: 'Max Limit (WHO)'.tr,
+            isDot: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  LineChartData _buildChartData(BuildContext context, bool isRtl) {
+    // 1. خط منظمة الصحة العالمية (المثالي)
+    final List<FlSpot> idealSpots = data.whoStandards
+        .map((e) => FlSpot(e.ageInMonths.toDouble(), e.whoIdeal))
+        .toList();
+
+    // 2. خط منظمة الصحة العالمية (الأقصى)
+    final List<FlSpot> maxSpots = data.whoStandards
+        .map((e) => FlSpot(e.ageInMonths.toDouble(), e.whoMaxWeight))
+        .toList();
+
+    // 3. خط منظمة الصحة العالمية (الأدنى)
+    final List<FlSpot> minSpots = data.whoStandards
+        .map((e) => FlSpot(e.ageInMonths.toDouble(), e.whoMinWeight))
+        .toList();
+
+    // 4. خط نمو الطفل الفعلي
+    final List<GrowthRecordModel> sortedHistory = List.from(data.growthHistory)
+      ..sort((a, b) => a.ageInMonths.compareTo(b.ageInMonths));
+
+    final List<FlSpot> childSpots = sortedHistory
+        .map((e) => FlSpot(e.ageInMonths.toDouble(), e.weight))
+        .toList();
+
+    final double maxAgeInData = sortedHistory.isNotEmpty
+        ? sortedHistory.last.ageInMonths.toDouble()
+        : 0;
+    final double maxWeightInData = sortedHistory.isNotEmpty
+        ? sortedHistory.map((e) => e.weight).reduce(math.max)
+        : 0;
+
+    final double calculatedMaxX = math.max(36.0, maxAgeInData + 2);
+    final double calculatedMaxY = math.max(20.0, maxWeightInData + 5);
+
+    return LineChartData(
+      clipData: const FlClipData.all(),
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: true,
+        horizontalInterval: 5,
+
+        verticalInterval: (data.currentAgeMonths > 24) ? 12 : 6,
+
+        getDrawingHorizontalLine: (value) =>
+            FlLine(color: context.theme.dividerColor, strokeWidth: 1),
+        getDrawingVerticalLine: (value) =>
+            FlLine(color: context.theme.dividerColor, strokeWidth: 1),
+      ),
+      titlesData: FlTitlesData(
+        show: true,
+        rightTitles: const AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        bottomTitles: AxisTitles(
+          axisNameWidget: Text(
+            'Age (Months)'.tr,
+            style: TextStyle(
+              fontSize: 11,
+
+              color: context.textTheme.bodyMedium?.color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          axisNameSize: 20,
+          sideTitles: SideTitles(
+            showTitles: true,
+
+            interval: (data.currentAgeMonths > 24) ? 12 : 6,
+            getTitlesWidget: (value, meta) => Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                value.toInt().toString(),
+
+                style: TextStyle(
+                  color: context.textTheme.bodyMedium?.color,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+        ),
+        leftTitles: AxisTitles(
+          axisNameWidget: Text(
+            'Weight (kg)'.tr,
+            style: TextStyle(
+              fontSize: 11,
+
+              color: context.textTheme.bodyMedium?.color,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          axisNameSize: 20,
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 5,
+            getTitlesWidget: (value, meta) => Text(
+              value.toInt().toString(),
+
+              style: TextStyle(
+                color: context.textTheme.bodyMedium?.color,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ),
+      ),
+      borderData: FlBorderData(show: false),
+      minX: 0,
+
+      maxX: data.currentAgeMonths > 24
+          ? data.currentAgeMonths.toDouble()
+          : 24.0,
+      minY: 0,
+      maxY: calculatedMaxY,
+      lineBarsData: [
+        LineChartBarData(
+          spots: minSpots,
+          isCurved: true,
+          color: Colors.redAccent.withOpacity(0.4),
+          barWidth: 1.5,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: false),
+          dashArray: [4, 4],
+        ),
+        LineChartBarData(
+          spots: maxSpots,
+          isCurved: true,
+          color: Colors.redAccent.withOpacity(0.6),
+          barWidth: 1.5,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: false),
+          dashArray: [4, 4],
+        ),
+        LineChartBarData(
+          spots: idealSpots,
+          isCurved: true,
+          color: Colors.green.withOpacity(0.7),
+          barWidth: 2,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: false),
+          dashArray: [4, 4],
+        ),
+        // خط نمو الطفل الفعلي
+        LineChartBarData(
+          spots: childSpots,
+          isCurved: false,
+          color: Colors.blue.shade700,
+          barWidth: 3.5,
+          isStrokeCapRound: true,
+
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (spot, percent, barData, index) =>
+                FlDotCirclePainter(
+                  radius: 5,
+                  color: Colors.blue.shade800,
+                  strokeWidth: 2,
+
+                  strokeColor: context.theme.cardColor,
+                ),
+          ),
+        ),
+      ],
+      lineTouchData: LineTouchData(
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipColor: (touchedSpot) => context.isDarkMode
+              ? const Color(0xFF303030)
+              : const Color(0xFF212121),
+          getTooltipItems: (List<LineBarSpot> touchedSpots) {
+            return touchedSpots.map((barSpot) {
+              if (barSpot.barIndex == 3) {
+                final index = barSpot.spotIndex;
+                if (index < sortedHistory.length) {
+                  final record = sortedHistory[index];
+                  return LineTooltipItem(
+                    '${record.date}\n${'Weight (kg)'.tr}: ${record.weight}\n${'Status: '.tr}${record.statusText.tr}',
+                    const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      height: 1.4,
+                    ),
+                  );
+                }
+              }
+              return null;
+            }).toList();
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+  final bool isDot;
+
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    required this.isDot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isDot)
+          Row(
+            children: List.generate(
+              3,
+              (index) => Container(
+                width: 5,
+                height: 2,
+                margin: const EdgeInsets.symmetric(horizontal: 1),
+                color: color,
+              ),
+            ),
+          )
+        else
+          Container(width: 14, height: 3, color: color),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            // ─── لون نص الدليل متكيف ───
+            color: context.textTheme.bodyMedium?.color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+```
+
+### File: lib\widgets\growth\growth_history_list.dart
+```dart
+// File: lib/widgets/growth/growth_history_list.dart
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../../controllers/growth/child_growth_controller.dart';
+import '../../../models/growth/child_growth_response_model.dart';
+import '../../../models/growth/growth_record_model.dart';
+
+class GrowthHistoryList extends StatelessWidget {
+  final ChildGrowthResponseModel data;
+
+  const GrowthHistoryList({super.key, required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = Get.find<ChildGrowthController>();
+
+    // ترتيب السجلات تنازلياً (الأحدث أولاً)
+    final List<GrowthRecordModel> sortedHistory = List.from(data.growthHistory)
+      ..sort((a, b) => b.ageInMonths.compareTo(a.ageInMonths));
+
+    if (sortedHistory.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: Text(
+            'No measurements found'.tr, // تم تعديل النص ليكون أوضح
+            style: TextStyle(color: context.textTheme.bodyMedium?.color, fontSize: 14),
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sortedHistory.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final record = sortedHistory[index];
+        return _HistoryCard(record: record, controller: controller);
+      },
+    );
+  }
+}
+
+class _HistoryCard extends StatelessWidget {
+  final GrowthRecordModel record;
+  final ChildGrowthController controller;
+
+  const _HistoryCard({required this.record, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    Color badgeColor;
+    try {
+      badgeColor = Color(int.parse(record.statusColor.replaceAll('#', '0xFF')));
+    } catch (_) {
+      badgeColor = const Color(0xFF4CAF50);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: context.isDarkMode ? Colors.transparent : Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(color: context.theme.dividerColor),
+      ),
+      child: Row(
+        children: [
+          // 1. أيقونة الميزان الجانبية
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: context.isDarkMode ? Colors.blue.withOpacity(0.15) : const Color(0xFFF0F4FF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.assignment_outlined,
+              color: context.isDarkMode ? Colors.blue.shade300 : Colors.blue,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // 2. عمود تفاصيل الوزن والطول
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      Text(
+                        '${'Weight'.tr}: ${record.weight} ${'kg'.tr}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: context.textTheme.bodyLarge?.color,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '|  ${'Height'.tr}: ${record.height} ${'cm'.tr}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textTheme.bodyMedium?.color,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Text(
+                      record.date,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: context.textTheme.bodyMedium?.color,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      width: 3,
+                      height: 3,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: context.theme.dividerColor,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${'Age'.tr} ${record.ageInMonths.toInt()} ${'months_old'.tr}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: context.textTheme.bodyMedium?.color,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+
+          // 3. قسم الشارة التفاعلية (تم إزالة زر الحذف من هنا)
+          Expanded(
+            flex: 2,
+            child: GestureDetector(
+              onTap: () => _showStatusDetailsDialog(context, badgeColor),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                decoration: BoxDecoration(
+                  color: badgeColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        record.statusText.contains('ينصح')
+                            ? 'Needs Review'.tr
+                            : record.statusText.tr,
+                        style: TextStyle(
+                          color: badgeColor,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: badgeColor,
+                      size: 10,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showStatusDetailsDialog(BuildContext context, Color color) {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: context.theme.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.analytics_outlined, color: color, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Medical Assessment'.tr,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: context.textTheme.bodyLarge?.color,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: color.withOpacity(0.2)),
+              ),
+              child: Text(
+                record.statusText,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                  fontWeight: FontWeight.w500,
+                  color: context.textTheme.bodyLarge?.color,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: Text(
+              'Close'.tr,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: context.theme.primaryColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 ```
 
 ### File: lib\widgets\home\floating_bottom_bar.dart

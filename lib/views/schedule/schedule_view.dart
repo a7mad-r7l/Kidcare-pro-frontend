@@ -8,6 +8,50 @@ class ScheduleView extends GetView<ScheduleController> {
   const ScheduleView({super.key});
 
   @override
+  Widget _buildStatusBadge(String status, BuildContext context) {
+    Color bgColor;
+    Color textColor;
+
+    switch (status.toLowerCase()) {
+      case 'pending':
+        bgColor = Colors.orange.withValues(alpha: 0.1);
+        textColor = Colors.orange;
+        break;
+      case 'completed':
+        bgColor = Colors.green.withValues(alpha: 0.1);
+        textColor = Colors.green;
+        break;
+      case 'cancelled':
+        bgColor = Colors.red.withValues(alpha: 0.1);
+        textColor = Colors.red;
+        break;
+      case 'arrived':
+        bgColor = Colors.blue.withValues(alpha: 0.1);
+        textColor = Colors.blue;
+        break;
+      default:
+        bgColor = context.theme.dividerColor.withValues(alpha: 0.1);
+        textColor = context.theme.hintColor;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        status.tr,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  @override // 👈 تم إضافة override هنا لأنها دالة build الأساسية
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.theme.scaffoldBackgroundColor,
@@ -21,41 +65,10 @@ class ScheduleView extends GetView<ScheduleController> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.filter_list, color: context.theme.primaryColor),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: Column(
         children: [
-          // شريط "الكل" والعدد
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-            child: Row(
-              children: [
-                Text(
-                  'All'.tr,
-                  style: context.theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Obx(() => CircleAvatar(
-                  radius: 12,
-                  backgroundColor: context.theme.primaryColor,
-                  child: Text(
-                    controller.scheduleData.value?.totalAppointments.toString() ?? '0',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                )),
-                const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
-              ],
-            ),
-          ),
-
-          // الشريط الأفقي للتواريخ (تم دمج التحقق من الأيام هنا)
+          const SizedBox(height: 10),
           SizedBox(
             height: 90,
             child: Obx(() {
@@ -138,147 +151,155 @@ class ScheduleView extends GetView<ScheduleController> {
           // قائمة المواعيد
           Expanded(
             child: Obx(() {
-              if (controller.isLoading && controller.weekDates.isNotEmpty) {
+              if (controller.isLoading && controller.scheduleData.value == null) {
                 return Center(child: CircularProgressIndicator(color: context.theme.primaryColor));
               }
 
               final appointments = controller.scheduleData.value?.appointments ?? [];
 
-              if (appointments.isEmpty) {
-                return Center(child: Text('No appointments for this date'.tr));
-              }
+              return RefreshIndicator(
+                color: context.theme.primaryColor,
+                onRefresh: () async {
+                  await controller.fetchScheduleForDate(controller.selectedDate.value);
+                },
+                child: appointments.isEmpty
+                    ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+                    Center(child: Text('No appointments for this date'.tr)),
+                  ],
+                )
+                    : ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 100),
+                  itemCount: appointments.length,
+                  itemBuilder: (context, index) {
+                    final appointment = appointments[index];
+                    final isFirst = index == 0;
 
-              return ListView.builder(
-                padding: const EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 100),
-                itemCount: appointments.length,
-                itemBuilder: (context, index) {
-                  final appointment = appointments[index];
-                  // تحديد البطاقة الأولى للتمييز بناءً على التصميم
-                  final isFirst = index == 0;
-
-                  // ─── تم التعديل هنا: إضافة Padding و InkWell للانتقال ───
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: InkWell(
-                      onTap: () {
-                        // الانتقال لشاشة التفاصيل وتمرير معرّف الموعد
-                        Get.toNamed('/appointment_details', arguments: appointment.id);
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: isFirst ? context.theme.primaryColor.withValues(alpha: 0.08) : context.theme.cardColor,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isFirst ? context.theme.primaryColor.withValues(alpha: 0.3) : context.theme.dividerColor.withValues(alpha: 0.1),
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: InkWell(
+                        onTap: () {
+                          Get.toNamed('/appointment_details', arguments: appointment.id);
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isFirst ? context.theme.primaryColor.withValues(alpha: 0.08) : context.theme.cardColor,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isFirst ? context.theme.primaryColor.withValues(alpha: 0.3) : context.theme.dividerColor.withValues(alpha: 0.1),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: context.theme.shadowColor.withValues(alpha: 0.02),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: context.theme.shadowColor.withValues(alpha: 0.02),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // بيانات الوقت في اليسار
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Text(
-                                  '${appointment.time} ${appointment.timePeriod.tr}',
-                                  style: context.theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: context.theme.textTheme.bodyLarge?.color,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${appointment.duration} ${'minutes'.tr}',
-                                  style: context.theme.textTheme.bodySmall?.copyWith(
-                                    color: context.theme.hintColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(width: 16),
-
-                            // بيانات المريض في المنتصف
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ─── التعديل تم هنا ───
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start, // 👈 جعلناها start بدلاً من center
                                 children: [
                                   Text(
-                                    appointment.patientName,
+                                    '${appointment.time} ${appointment.timePeriod.tr}',
                                     style: context.theme.textTheme.titleMedium?.copyWith(
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 16,
+                                      color: context.theme.textTheme.bodyLarge?.color,
                                     ),
-                                    textAlign: TextAlign.right,
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${appointment.age} ${appointment.ageType.tr} - ${appointment.gender.tr}',
+                                    '${appointment.duration} ${'minutes'.tr}',
                                     style: context.theme.textTheme.bodySmall?.copyWith(
                                       color: context.theme.hintColor,
                                     ),
-                                    textAlign: TextAlign.right,
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    appointment.note,
-                                    style: context.theme.textTheme.bodySmall?.copyWith(
-                                      color: context.theme.textTheme.bodyLarge?.color?.withValues(alpha: 0.8),
+                                  const SizedBox(height: 8), // 👈 مسافة بين المدة والحالة
+                                  _buildStatusBadge(appointment.status, context), // 👈 نقلناها لداخل هذا العمود
+                                ],
+                              ),
+
+                              const SizedBox(width: 16),
+
+                              // تم إزالة الشارة من هذا المكان
+
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      appointment.patientName,
+                                      style: context.theme.textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                      textAlign: TextAlign.right,
                                     ),
-                                    textAlign: TextAlign.right,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${appointment.age} ${appointment.ageType.tr} - ${appointment.gender.tr}',
+                                      style: context.theme.textTheme.bodySmall?.copyWith(
+                                        color: context.theme.hintColor,
+                                      ),
+                                      textAlign: TextAlign.right,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      appointment.note,
+                                      style: context.theme.textTheme.bodySmall?.copyWith(
+                                        color: context.theme.textTheme.bodyLarge?.color?.withValues(alpha: 0.8),
+                                      ),
+                                      textAlign: TextAlign.right,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 24,
+                                    backgroundColor: context.theme.dividerColor.withValues(alpha: 0.1),
+                                    backgroundImage: appointment.image.isNotEmpty
+                                        ? NetworkImage('$baseUrl/${appointment.image}')
+                                        : null,
+                                    child: appointment.image.isEmpty
+                                        ? Icon(Icons.person, color: context.theme.hintColor)
+                                        : null,
+                                  ),
+                                  Positioned(
+                                    right: -4,
+                                    top: 15,
+                                    child: Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: context.theme.primaryColor,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: context.theme.cardColor, width: 2),
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-
-                            const SizedBox(width: 16),
-
-                            // الصورة والنقطة في اليمين
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                CircleAvatar(
-                                  radius: 24,
-                                  backgroundColor: context.theme.dividerColor.withValues(alpha: 0.1),
-                                  backgroundImage: appointment.image.isNotEmpty
-                                      ? NetworkImage('$baseUrl/${appointment.image}')
-                                      : null,
-                                  child: appointment.image.isEmpty
-                                      ? Icon(Icons.person, color: context.theme.hintColor)
-                                      : null,
-                                ),
-                                Positioned(
-                                  right: -4,
-                                  top: 15,
-                                  child: Container(
-                                    width: 12,
-                                    height: 12,
-                                    decoration: BoxDecoration(
-                                      color: context.theme.primaryColor,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(color: context.theme.cardColor, width: 2),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               );
             }),
           ),

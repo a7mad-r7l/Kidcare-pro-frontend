@@ -1,3 +1,4 @@
+// File: lib/core/apis/patients/medical_file_api.dart
 import 'package:http/http.dart' as http;
 import 'package:get/get.dart';
 import '../../constants.dart';
@@ -16,16 +17,11 @@ class MedicalFileApi {
   }
 
   Future<String> getMedicalFile(int patientId) async {
-    final url = Uri.parse('$baseUrl/api/doctor/$patientId/medicalRecord');
+    // 👈 تم تحديث المسار بناءً على الـ Postman الجديد
+    final url = Uri.parse('$baseUrl/api/doctor/patient-visits/$patientId');
 
-    // طباعة الرابط للتأكد من أن الـ ID يتم تمريره بشكل صحيح
-    print('🌐 Requesting URL: $url');
-
+    print('🌐 Requesting Medical File URL: $url');
     final response = await http.get(url, headers: await _getHeaders());
-
-    // طباعة حالة الرد وجسم الرد لاكتشاف الخطأ
-    print('📥 Response Status Code: ${response.statusCode}');
-    print('📥 Response Body: ${response.body}');
 
     return response.body;
   }

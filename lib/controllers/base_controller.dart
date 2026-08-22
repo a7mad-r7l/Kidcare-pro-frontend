@@ -21,13 +21,25 @@ class BaseController extends GetxController {
     String message = "Something went wrong. Please try again.".tr;
 
     try {
-      if (errorString.contains("401")) {
-        message = "Incorrect phone number or password.".tr;
-        SecureStorage.removeToken();
+      if (errorString.toLowerCase().contains("unauthenticated") ||
+          errorString.contains("401")) {
+        SecureStorage.removeAll();
+
         if (Get.currentRoute != '/login') {
           Get.offAllNamed('/login');
-          return;
+
+          Get.snackbar(
+            "Session Expired".tr,
+            "Please login again to continue.".tr,
+            backgroundColor: Colors.orange.shade700,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(15),
+            icon: const Icon(Icons.lock_clock, color: Colors.white),
+            duration: const Duration(seconds: 4),
+          );
         }
+        return;
       } else if (errorString.contains('{') && errorString.contains('}')) {
         final startIndex = errorString.indexOf('{');
         final endIndex = errorString.lastIndexOf('}') + 1;
@@ -43,9 +55,7 @@ class BaseController extends GetxController {
       } else if (errorString.contains("TimeoutException")) {
         message = "Request timed out. Please try again.".tr;
       }
-    } catch (_) {
-      // JSON parse failed — fall through to the generic message above.
-    }
+    } catch (_) {}
 
     Get.snackbar(
       "Error".tr,

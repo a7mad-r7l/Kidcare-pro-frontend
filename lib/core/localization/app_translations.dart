@@ -36,6 +36,7 @@ class AppTranslations extends Translations {
       'Age (Months)': 'Age (Months)',
       'Weight (kg)': 'Weight (kg)',
       'Status: ': 'Status: ',
+      'Next Patient':'Next Patient',
 
 
       //patients
@@ -97,7 +98,10 @@ class AppTranslations extends Translations {
       'Phone': 'Phone',
       'No patients found': 'No patients found',
 
-      // --- Home View ---
+      // --- status
+      'pending': 'Pending',
+      'cancelled': 'Cancelled',
+      'arrived': 'Arrived',
 
       // --- Home & Dashboard View ---
       'Hello': 'Hello',
@@ -367,6 +371,9 @@ class AppTranslations extends Translations {
       'Status: ': 'الحالة: ',
 
       //schedule
+      'pending': 'قيد الانتظار',
+      'cancelled': 'ملغى',
+      'arrived': 'في الانتظار', // أو وصل للعيادة
       'Appointments Schedule': 'جدول المواعيد',
       'All': 'الكل',
       'minutes': 'دقائق',
@@ -486,6 +493,7 @@ class AppTranslations extends Translations {
       'Please enter both height and weight': 'الرجاء إدخال الطول والوزن معاً',
       'Please save the diagnosis first': 'الرجاء حفظ التشخيص أولاً',
       'Please complete all medication fields': 'الرجاء إكمال جميع حقول الدواء',
+      'Next Patient':'المريض التالي',
 
       // --- Invoice View ---
       'Invoice': 'الفاتورة',

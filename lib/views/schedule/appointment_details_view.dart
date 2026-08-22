@@ -56,19 +56,11 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
               ),
               const SizedBox(height: 12),
               _buildAppointmentInfoCard(context, data),
-              const SizedBox(height: 24),
-              Text(
-                'Parents Notes'.tr,
-                style: context.theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildNotesCard(context, data),
+
               const SizedBox(height: 32),
               if (data.status != 'cancelled_by_clinic' &&
                   data.status != 'cancelled_by_patient' &&
-                  data.status != 'completed')
+                  data.status != 'completed'&& data.status != 'Confirmed')
                 _buildActionButtons(context, data),
             ],
           ),
@@ -328,7 +320,7 @@ class AppointmentDetailsView extends GetView<AppointmentDetailsController> {
                 ageType: data.childAgeType,
                 gender: data.childGender,
                 image: data.childImage,
-                appointmentTime: data.time,
+                appointmentTime: data.time, status: '',
               );
 
               // 2. الانتقال إلى شاشة المعاينة وتمرير البيانات معها

@@ -64,7 +64,7 @@ class _DashboardTab extends GetView<HomeController> {
                   children: [
                     const SizedBox(height: 10),
                     const NextPatientCard(),
-                    const SizedBox(height: 24),
+                    //const SizedBox(height: 24),
                     const StatsGrid(),
                     const SizedBox(height: 24),
 
